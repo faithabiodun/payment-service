@@ -1,1 +1,27 @@
-spring.application.name=payment-service
+spring:
+  application:
+    name: payment-service
+
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/payment_service}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD}
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+
+  flyway:
+    enabled: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,flyway
+
+paystack:
+  base-url: https://api.paystack.co
+  secret-key: ${PAYSTACK_SECRET_KEY}
+  callback-url: ${PAYSTACK_CALLBACK_URL:http://localhost:8080/api/v1/payments/callback}
