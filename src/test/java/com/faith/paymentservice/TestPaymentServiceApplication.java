@@ -1,6 +1,7 @@
 package com.faith.paymentservice;
 
 import org.springframework.boot.SpringApplication;
+import com.faith.PaymentServiceApplication;
 
 public class TestPaymentServiceApplication {
 
