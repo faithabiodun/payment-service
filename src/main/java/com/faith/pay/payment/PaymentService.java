@@ -17,12 +17,14 @@ public class PaymentService {
     private final OrderRepository orderRepository;
     private final PaystackClient paystackClient;
     private final PaymentAudit audit;
+    private final PaymentCompletionService completionService;
 
     public PaymentService(
             PaymentRepository paymentRepository,
             OrderRepository orderRepository,
             PaystackClient paystackClient,
-            PaymentAudit audit
+            PaymentAudit audit,
+            PaymentCompletionService completionService
     ) {
         this.paymentRepository =
                 paymentRepository;
@@ -35,6 +37,9 @@ public class PaymentService {
 
         this.audit =
                 audit;
+
+        this.completionService =
+                completionService;
     }
 
     @Transactional
@@ -205,6 +210,32 @@ public class PaymentService {
                         );
 
         return PaymentResponse.from(payment);
+    }
+
+    public PaymentResponse verify(
+            String reference
+    ){
+        /*
+         * Ask Paystack directly.
+         *
+         * This HTTP call is outside the transaction
+         * used to complete the payment.
+         */
+        var provider = paystackClient.verify(
+                reference
+        );
+
+        if("success"
+                .equalsIgnoreCase(provider.status())
+        ){
+            completionService.applySuccess(
+                    provider,
+                    "VERIFICATION",
+                    null
+            );
+        }
+
+        return get(reference);
     }
 
 
