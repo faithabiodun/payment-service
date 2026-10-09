@@ -45,6 +45,15 @@ public class PaymentController {
                 );
     }
 
+    @PostMapping("/{reference}/verify")
+    public PaymentResponse verify(
+            @PathVariable
+            String reference
+    ) {
+
+        return service.verify(reference);
+    }
+
 
     @GetMapping("/{reference}")
     public PaymentResponse get(
