@@ -1,6 +1,7 @@
 package com.faith.pay.payment;
 
 import com.faith.pay.provider.dto.PaystackTransactionData;
+import com.faith.pay.error.AmountMismatchException;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -76,7 +77,7 @@ public class PaymentCompletionService {
         if (payment.getAmountKobo()
                 != data.amount()) {
 
-            throw new IllegalStateException(
+            throw new AmountMismatchException(
                     "Payment amount mismatch"
             );
         }

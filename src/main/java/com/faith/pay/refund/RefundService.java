@@ -3,6 +3,7 @@ package com.faith.pay.refund;
 import com.faith.pay.payment.Payment;
 import com.faith.pay.payment.PaymentRepository;
 import com.faith.pay.payment.PaymentStatus;
+import com.faith.pay.error.RefundLimitExceededException;
 import com.faith.pay.provider.PaystackClient;
 import com.faith.pay.provider.dto.PaystackRefundData;
 
@@ -106,7 +107,7 @@ public class RefundService {
                 .totalReservedRefundAmount(payment.getId());
 
         if (amountKobo > payment.getAmountKobo() - reserved) {
-            throw new IllegalArgumentException(
+            throw new RefundLimitExceededException(
                     "Refund amount exceeds the remaining refundable amount"
             );
         }

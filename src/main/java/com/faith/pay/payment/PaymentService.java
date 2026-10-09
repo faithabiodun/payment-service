@@ -1,6 +1,8 @@
 package com.faith.pay.payment;
 
 import com.faith.pay.order.*;
+import com.faith.pay.error.OrderNotFoundException;
+import com.faith.pay.error.PaymentAlreadySuccessfulException;
 import com.faith.pay.payment.dto.*;
 import com.faith.pay.provider.PaystackClient;
 import com.faith.pay.provider.dto.PaystackInitializeData;
@@ -96,7 +98,7 @@ public class PaymentService {
                                 request.orderId()
                         )
                         .orElseThrow(() ->
-                                new IllegalArgumentException(
+                                new OrderNotFoundException(
                                         "Order not found"
                                 )
                         );
@@ -123,7 +125,7 @@ public class PaymentService {
         if (order.getStatus()
                 == OrderStatus.PAID) {
 
-            throw new IllegalStateException(
+            throw new PaymentAlreadySuccessfulException(
                     "Order is already paid"
             );
         }
