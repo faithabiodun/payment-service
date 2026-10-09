@@ -1,13 +1,18 @@
 {
   "info": {
-    "name": "Payment Service - Test Orders",
-    "description": "Create a test order. amountKobo is an integer in kobo: 100000 represents NGN 1,000.",
+    "name": "Payment Service - Test Payment Flow",
+    "description": "Create a test order, then initialize its payment.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
     {
       "key": "baseUrl",
       "value": "http://localhost:8080",
+      "type": "string"
+    },
+    {
+      "key": "orderId",
+      "value": "1",
       "type": "string"
     }
   ],
@@ -22,15 +27,50 @@
         ],
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"email\": \"customer@example.com\",\n  \"amountKobo\": 100000\n}",
+          "raw": "{\n  \"email\": \"faith@example.com\",\n  \"amountKobo\": 500000\n}",
           "options": { "raw": { "language": "json" } }
         },
+        "description": "Creates an order for NGN 5,000 and saves its returned id as the collection variable orderId.",
         "url": {
           "raw": "{{baseUrl}}/api/v1/test-orders",
           "host": ["{{baseUrl}}"],
           "path": ["api", "v1", "test-orders"]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const order = pm.response.json();",
+              "if (order.id) pm.collectionVariables.set('orderId', order.id);"
+            ]
+          }
+        }
+      ],
+      "response": []
+    },
+    {
+      "name": "Initialize Payment",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Idempotency-Key", "value": "{{$guid}}" },
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Accept", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"orderId\": {{orderId}}\n}",
+          "options": { "raw": { "language": "json" } }
         },
-        "description": "Creates an order and returns HTTP 201 Created. email must be a valid, nonblank email address; amountKobo must be greater than zero."
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/payments/initialize",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "v1", "payments", "initialize"]
+        },
+        "description": "Run after Create Test Order. The collection automatically uses the new order ID. The response includes reference, amountKobo, status, authorizationUrl, and accessCode."
       },
       "response": []
     }
