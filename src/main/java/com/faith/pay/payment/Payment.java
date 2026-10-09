@@ -4,6 +4,9 @@ import com.faith.pay.order.Order;
 
 import jakarta.persistence.*;
 
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+
 import java.time.Instant;
 
 @Entity
@@ -33,7 +36,8 @@ public class Payment {
     )
     private long amountKobo;
 
-    @Column(nullable = false)
+    @JdbcTypeCode(SqlTypes.CHAR)
+    @Column(nullable = false, length = 3)
     private String currency = "NGN";
 
     @Enumerated(EnumType.STRING)

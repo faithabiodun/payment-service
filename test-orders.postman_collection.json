@@ -1,0 +1,38 @@
+{
+  "info": {
+    "name": "Payment Service - Test Orders",
+    "description": "Create a test order. amountKobo is an integer in kobo: 100000 represents NGN 1,000.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Create Test Order",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Accept", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"customer@example.com\",\n  \"amountKobo\": 100000\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/test-orders",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "v1", "test-orders"]
+        },
+        "description": "Creates an order and returns HTTP 201 Created. email must be a valid, nonblank email address; amountKobo must be greater than zero."
+      },
+      "response": []
+    }
+  ]
+}

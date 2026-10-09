@@ -38,4 +38,20 @@ public class Order {
         }
         status = OrderStatus.PAID;
     }
+
+    public Long getId() {
+        return id;
+    }
+
+    public String getCustomerEmail() {
+        return customerEmail;
+    }
+
+    public long getTotalKobo() {
+        return totalKobo;
+    }
+
+    public OrderStatus getStatus() {
+        return status;
+    }
 }
