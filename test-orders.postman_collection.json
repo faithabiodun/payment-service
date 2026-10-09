@@ -19,6 +19,11 @@
       "key": "reference",
       "value": "PAY-YOUR-REFERENCE",
       "type": "string"
+    },
+    {
+      "key": "amountKobo",
+      "value": "",
+      "type": "string"
     }
   ],
   "item": [
@@ -84,7 +89,8 @@
             "type": "text/javascript",
             "exec": [
               "const payment = pm.response.json();",
-              "if (payment.reference) pm.collectionVariables.set('reference', payment.reference);"
+              "if (payment.reference) pm.collectionVariables.set('reference', payment.reference);",
+              "if (payment.amountKobo) pm.collectionVariables.set('amountKobo', payment.amountKobo);"
             ]
           }
         }
@@ -104,6 +110,63 @@
           "path": ["api", "v1", "payments", "{{reference}}", "verify"]
         },
         "description": "Run after Initialize Payment completes checkout with Paystack. Uses the reference saved from the initialize response and returns the verified payment status."
+      },
+      "response": []
+    },
+    {
+      "name": "Simulate Paystack Success Webhook",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "x-paystack-signature", "value": "" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/webhooks/paystack",
+          "host": ["{{baseUrl}}"],
+          "path": ["webhooks", "paystack"]
+        },
+        "description": "Local webhook simulation for testing only. First initialize a payment, then set the Postman environment variable paystackSecretKey to the same secret configured by PAYSTACK_SECRET_KEY. The pre-request script signs the exact request body. This does not contact Paystack or prove that a real payment occurred."
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const secret = pm.environment.get('paystackSecretKey');",
+              "if (!secret) throw new Error('Set the Postman environment variable paystackSecretKey to your local Paystack secret key.');",
+              "const reference = pm.collectionVariables.get('reference');",
+              "const amount = Number(pm.collectionVariables.get('amountKobo'));",
+              "if (!reference || !Number.isSafeInteger(amount) || amount <= 0) throw new Error('Run Initialize Payment first so the collection has a valid reference and amountKobo.');",
+              "const body = JSON.stringify({ event: 'charge.success', data: { id: Date.now(), status: 'success', reference, amount, currency: 'NGN', channel: 'card', fees: 0, paid_at: new Date().toISOString() } });",
+              "pm.request.body.update({ mode: 'raw', raw: body });",
+              "const signature = CryptoJS.HmacSHA512(body, secret).toString(CryptoJS.enc.Hex);",
+              "pm.request.headers.upsert({ key: 'x-paystack-signature', value: signature });"
+            ]
+          }
+        }
+      ],
+      "response": []
+    },
+    {
+      "name": "Get Payment Status",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Accept", "value": "application/json" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/payments/{{reference}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "v1", "payments", "{{reference}}"]
+        },
+        "description": "Check the payment status after the webhook call. A successfully processed charge.success event should show status SUCCESS."
       },
       "response": []
     }

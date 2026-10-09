@@ -104,4 +104,51 @@ public class PaystackClient {
 
         return response.data();
     }
+
+    public PaystackRefundData refund(
+            String transactionReference,
+            long amountKobo,
+            String reason
+    ) {
+
+        PaystackRefundRequest request =
+                new PaystackRefundRequest(
+                        transactionReference,
+                        amountKobo,
+                        reason
+                );
+
+
+        PaystackResponse<PaystackRefundData>
+                response =
+                webClient
+                        .post()
+                        .uri("/refund")
+                        .bodyValue(request)
+                        .retrieve()
+                        .bodyToMono(
+                                new ParameterizedTypeReference<
+                                        PaystackResponse<
+                                                PaystackRefundData
+                                                >
+                                        >() {
+                                }
+                        )
+                        .block(
+                                Duration.ofSeconds(10)
+                        );
+
+
+        if (response == null
+                || !response.status()
+                || response.data() == null) {
+
+            throw new IllegalStateException(
+                    "Refund request failed"
+            );
+        }
+
+
+        return response.data();
+    }
 }
