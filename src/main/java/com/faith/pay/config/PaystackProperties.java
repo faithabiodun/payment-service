@@ -7,5 +7,6 @@ public record PaystackProperties(
         String baseUrl,
         String secretKey,
         String callbackUrl
+
 ) {
 }
