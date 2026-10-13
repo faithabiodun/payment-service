@@ -190,6 +190,10 @@ public class Payment {
         return providerTransactionId;
     }
 
+    public Instant getPaidAt() {
+        return paidAt;
+    }
+
     public long getRefundedKobo() {
         return refundedKobo;
     }

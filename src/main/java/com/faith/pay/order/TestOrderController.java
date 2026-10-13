@@ -1,10 +1,8 @@
 package com.faith.pay.order;
 
+import com.faith.pay.order.dto.CreateOrderRequest;
+import com.faith.pay.order.dto.CreateOrderResponse;
 import jakarta.validation.Valid;
-import jakarta.validation.constraints.Email;
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.Positive;
-
 import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
 
@@ -17,21 +15,12 @@ public class TestOrderController {
         this.orderRepository = orderRepository;
     }
 
-    public record CreateOrderRequest(
-            @NotBlank
-            @Email
-            String email,
-
-            @Positive
-            long amountKobo
-    ){ }
-
     @PostMapping
-    public  ResponseEntity<Order> create(
+    public ResponseEntity<CreateOrderResponse> create(
             @Valid
             @RequestBody
             CreateOrderRequest request
-    ){
+    ) {
         Order order = new Order(
                 request.email(),
                 request.amountKobo()
@@ -39,6 +28,6 @@ public class TestOrderController {
 
         return ResponseEntity
                 .status(HttpStatus.CREATED)
-                .body(orderRepository.save(order));
+                .body(CreateOrderResponse.from(orderRepository.save(order)));
     }
 }

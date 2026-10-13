@@ -2,7 +2,11 @@ package com.faith.pay.payment.dto;
 
 import com.faith.pay.payment.Payment;
 
+import java.time.Instant;
+
 public record PaymentResponse(
+
+        Long id,
 
         String reference,
 
@@ -14,7 +18,13 @@ public record PaymentResponse(
 
         String status,
 
-        long refundedKobo
+        long refundedKobo,
+
+        Instant paidAt,
+
+        Instant createdAt,
+
+        Instant updatedAt
 ) {
 
     public static PaymentResponse from(
@@ -22,12 +32,16 @@ public record PaymentResponse(
     ) {
 
         return new PaymentResponse(
+                payment.getId(),
                 payment.getReference(),
                 payment.getOrder().getId(),
                 payment.getAmountKobo(),
                 payment.getCurrency(),
                 payment.getStatus().name(),
-                payment.getRefundedKobo()
+                payment.getRefundedKobo(),
+                payment.getPaidAt(),
+                payment.getCreatedAt(),
+                payment.getUpdatedAt()
         );
     }
 }
