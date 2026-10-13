@@ -40,9 +40,9 @@ public class PaystackClient {
                         properties.callbackUrl()
                 );
 
-        PaystackResponse<PaystackInitializeData>
-                response =
-                webClient
+        PaystackResponse<PaystackInitializeData> response;
+        try {
+            response = webClient
                         .post()
                         .uri("/transaction/initialize")
                         .bodyValue(request)
@@ -55,9 +55,10 @@ public class PaystackClient {
                                         >() {
                                 }
                         )
-                        .block(
-                                Duration.ofSeconds(10)
-                        );
+                        .block(Duration.ofSeconds(10));
+        } catch (RuntimeException failure) {
+            throw new ProviderCommunicationException("Paystack initialization request failed", failure);
+        }
 
         if (response == null
                 || !response.status()
@@ -73,9 +74,9 @@ public class PaystackClient {
             String reference
     ) {
 
-        PaystackResponse<PaystackTransactionData>
-                response =
-                webClient
+        PaystackResponse<PaystackTransactionData> response;
+        try {
+            response = webClient
                         .get()
                         .uri(
                                 "/transaction/verify/{reference}",
@@ -90,9 +91,10 @@ public class PaystackClient {
                                         >() {
                                 }
                         )
-                        .block(
-                                Duration.ofSeconds(10)
-                        );
+                        .block(Duration.ofSeconds(10));
+        } catch (RuntimeException failure) {
+            throw new ProviderCommunicationException("Paystack verification request failed", failure);
+        }
 
         if (response == null
                 || !response.status()
@@ -118,9 +120,9 @@ public class PaystackClient {
                 );
 
 
-        PaystackResponse<PaystackRefundData>
-                response =
-                webClient
+        PaystackResponse<PaystackRefundData> response;
+        try {
+            response = webClient
                         .post()
                         .uri("/refund")
                         .bodyValue(request)
@@ -133,9 +135,10 @@ public class PaystackClient {
                                         >() {
                                 }
                         )
-                        .block(
-                                Duration.ofSeconds(10)
-                        );
+                        .block(Duration.ofSeconds(10));
+        } catch (RuntimeException failure) {
+            throw new ProviderCommunicationException("Paystack refund request failed", failure);
+        }
 
 
         if (response == null

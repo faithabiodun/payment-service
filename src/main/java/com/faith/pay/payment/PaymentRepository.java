@@ -11,7 +11,14 @@ import java.util.*;
 public interface PaymentRepository
         extends JpaRepository<Payment, Long> {
 
+    @Query("""
+            select p
+            from Payment p
+            join fetch p.order
+            where p.reference = :reference
+            """)
     Optional<Payment> findByReference(
+            @Param("reference")
             String reference
     );
 
@@ -34,6 +41,7 @@ public interface PaymentRepository
     @Query("""
             select p
             from Payment p
+            join fetch p.order
             where p.order.id = :orderId
               and p.status in (
                   com.faith.pay.payment.PaymentStatus.PENDING,

@@ -6,6 +6,7 @@ import org.springframework.http.HttpStatus;
 import tools.jackson.databind.ObjectMapper;
 
 import com.faith.pay.payment.PaymentCompletionService;
+import com.faith.pay.payment.audit.PaymentEventSource;
 import com.faith.pay.provider.dto.PaystackTransactionData;
 
 import org.springframework.stereotype.Service;
@@ -95,7 +96,7 @@ public class WebhookService {
 
             completionService.applySuccess(
                     data,
-                    "WEBHOOK",
+                    PaymentEventSource.WEBHOOK,
                     rawJson
             );
 

@@ -3,6 +3,9 @@ package com.faith.pay.payment;
 import com.faith.pay.error.*;
 import org.springframework.http.HttpStatus;
 
+import com.faith.pay.payment.audit.PaymentEventSource;
+import com.faith.pay.payment.audit.PaymentEventStore;
+import com.faith.pay.payment.audit.PaymentEventType;
 import com.faith.pay.provider.dto.PaystackTransactionData;
 
 import org.springframework.stereotype.Service;
@@ -12,21 +15,21 @@ import org.springframework.transaction.annotation.Transactional;
 public class PaymentCompletionService {
 
     private final PaymentRepository repository;
-    private final PaymentAudit audit;
+    private final PaymentEventStore eventStore;
 
     public PaymentCompletionService(
             PaymentRepository repository,
-            PaymentAudit audit
+            PaymentEventStore eventStore
     ) {
         this.repository = repository;
-        this.audit = audit;
+        this.eventStore = eventStore;
     }
 
 
     @Transactional
     public void applySuccess(
             PaystackTransactionData data,
-            String source,
+            PaymentEventSource source,
             String rawJson
     ) {
 
@@ -109,9 +112,9 @@ public class PaymentCompletionService {
                 .markPaid();
 
 
-        audit.record(
+        eventStore.append(
                 payment,
-                "PAYMENT_SUCCEEDED",
+                PaymentEventType.PAYMENT_SUCCEEDED,
                 previous,
                 PaymentStatus.SUCCESS,
                 source,

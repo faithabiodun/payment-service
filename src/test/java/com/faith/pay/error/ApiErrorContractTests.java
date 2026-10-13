@@ -1,6 +1,7 @@
 package com.faith.pay.error;
 
 import com.faith.pay.payment.PaymentCompletionService;
+import com.faith.pay.payment.audit.PaymentEventSource;
 import com.faith.pay.payment.PaymentController;
 import com.faith.pay.payment.PaymentService;
 import com.faith.pay.provider.dto.PaystackTransactionData;
@@ -119,7 +120,8 @@ class ApiErrorContractTests {
         AppException failure = new AppException(ErrorCode.PAYMENT_AMOUNT_MISMATCH,
                 HttpStatus.UNPROCESSABLE_ENTITY, "Payment amount mismatch");
         doThrow(failure).when(completion)
-                .applySuccess(any(PaystackTransactionData.class), eq("WEBHOOK"), any());
+                .applySuccess(any(PaystackTransactionData.class),
+                        eq(PaymentEventSource.WEBHOOK), any());
         WebhookService service = new WebhookService(new ObjectMapper(), deduplicator, completion);
         byte[] body = ("{\"event\":\"charge.success\",\"data\":{\"id\":1,"
                 + "\"reference\":\"PAY-test\",\"status\":\"success\",\"amount\":100,\"currency\":\"NGN\"}}")
