@@ -1,7 +1,9 @@
 package com.faith.pay.payment;
 
+import com.faith.pay.error.*;
+import org.springframework.http.HttpStatus;
+
 import com.faith.pay.provider.dto.PaystackTransactionData;
-import com.faith.pay.error.AmountMismatchException;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -34,9 +36,7 @@ public class PaymentCompletionService {
                                 data.reference()
                         )
                         .orElseThrow(() ->
-                                new IllegalArgumentException(
-                                        "Unknown payment reference"
-                                )
+                                new PaymentNotFoundException(data.reference())
                         );
 
 
@@ -63,7 +63,7 @@ public class PaymentCompletionService {
                         data.status()
                 )) {
 
-            throw new IllegalStateException(
+            throw new AppException(ErrorCode.PAYMENT_NOT_SUCCESSFUL, HttpStatus.CONFLICT,
                     "Provider transaction " +
                             "is not successful"
             );
@@ -77,7 +77,7 @@ public class PaymentCompletionService {
         if (payment.getAmountKobo()
                 != data.amount()) {
 
-            throw new AmountMismatchException(
+            throw new AppException(ErrorCode.PAYMENT_AMOUNT_MISMATCH, HttpStatus.UNPROCESSABLE_ENTITY,
                     "Payment amount mismatch"
             );
         }
@@ -89,7 +89,7 @@ public class PaymentCompletionService {
                         data.currency()
                 )) {
 
-            throw new IllegalStateException(
+            throw new AppException(ErrorCode.PAYMENT_CURRENCY_MISMATCH, HttpStatus.UNPROCESSABLE_ENTITY,
                     "Payment currency mismatch"
             );
         }

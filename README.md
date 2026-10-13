@@ -149,14 +149,35 @@ API errors include `timestamp`, `status`, `error`, and `message`.
 | Error | HTTP status |
 | --- | --- |
 | `ORDER_NOT_FOUND` | 404 |
-| `PAYMENT_ALREADY_SUCCESSFUL` | 409 |
-| `AMOUNT_MISMATCH` | 422 |
+| `ORDER_ALREADY_PAID` | 409 |
+| `PAYMENT_NOT_FOUND` | 404 |
+| `PAYMENT_ALREADY_IN_PROGRESS` | 409 |
+| `IDEMPOTENCY_KEY_REUSED` | 409 |
+| `PAYMENT_NOT_SUCCESSFUL` | 409 |
+| `PAYMENT_AMOUNT_MISMATCH` | 422 |
+| `PAYMENT_CURRENCY_MISMATCH` | 422 |
 | `PROVIDER_UNAVAILABLE` | 503 |
-| `REFUND_LIMIT_EXCEEDED` | 409 |
-| Generic invalid arguments | 400 |
-| Generic invalid state | 409 |
+| `PROVIDER_RESPONSE_INVALID` | 502 |
+| `REFUND_EXCEEDS_REMAINING_AMOUNT` | 409 |
+| `REFUND_NOT_ALLOWED` | 409 |
+| `INVALID_WEBHOOK_SIGNATURE` | 401 |
+| `INVALID_WEBHOOK_PAYLOAD` | 400 |
+| `BAD_REQUEST` | 400 (or the framework's request error status) |
+| `INTERNAL_ERROR` | 500 |
 
-Invalid or missing webhook signatures return 401.
+The `error` field contains a stable `ErrorCode` name. Domain failures extend
+`AppException` and supply their code, HTTP status, and message. Unexpected failures
+are logged and return a generic message. Invalid or missing webhook signatures
+return the same JSON error format with status 401.
+
+```json
+{
+  "timestamp": "2026-10-13T10:00:00Z",
+  "status": 404,
+  "error": "ORDER_NOT_FOUND",
+  "message": "Order 42 was not found"
+}
+```
 
 ## Tests
 

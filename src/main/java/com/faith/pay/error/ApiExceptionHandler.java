@@ -1,151 +1,56 @@
 package com.faith.pay.error;
 
-import org.springframework.http.*;
-import org.springframework.web.bind.annotation.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpStatusCode;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.context.request.WebRequest;
 import org.springframework.web.reactive.function.client.WebClientException;
+import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 
 import java.time.Instant;
-import java.util.Map;
 
 @RestControllerAdvice
-public class ApiExceptionHandler {
+public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
 
-    @ExceptionHandler(OrderNotFoundException.class)
-    public ResponseEntity<Map<String, Object>> orderNotFound(
-            OrderNotFoundException e
-    ) {
-        return error(
-                HttpStatus.NOT_FOUND,
-                "ORDER_NOT_FOUND",
-                e.getMessage()
-        );
+    private static final Logger log = LoggerFactory.getLogger(ApiExceptionHandler.class);
+
+    @ExceptionHandler(AppException.class)
+    public ResponseEntity<ApiError> appException(AppException e) {
+        return error(e.getStatus(), e.getCode(), e.getMessage());
     }
 
-    @ExceptionHandler(PaymentAlreadySuccessfulException.class)
-    public ResponseEntity<Map<String, Object>> paymentAlreadySuccessful(
-            PaymentAlreadySuccessfulException e
-    ) {
-        return error(
-                HttpStatus.CONFLICT,
-                "PAYMENT_ALREADY_SUCCESSFUL",
-                e.getMessage()
-        );
+    @ExceptionHandler({WebClientException.class, ProviderCommunicationException.class})
+    public ResponseEntity<ApiError> providerRequestFailed(Exception e) {
+        log.error("Payment provider request failed", e);
+        return error(HttpStatus.SERVICE_UNAVAILABLE, ErrorCode.PROVIDER_UNAVAILABLE,
+                "Payment provider request failed");
     }
 
-    @ExceptionHandler(AmountMismatchException.class)
-    public ResponseEntity<Map<String, Object>> amountMismatch(
-            AmountMismatchException e
-    ) {
-        return error(
-                HttpStatus.UNPROCESSABLE_ENTITY,
-                "AMOUNT_MISMATCH",
-                e.getMessage()
-        );
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<ApiError> unexpectedException(Exception e) {
+        log.error("Unexpected API failure", e);
+        return error(HttpStatus.INTERNAL_SERVER_ERROR, ErrorCode.INTERNAL_ERROR,
+                "An unexpected error occurred");
     }
 
-    @ExceptionHandler(ProviderUnavailableException.class)
-    public ResponseEntity<Map<String, Object>> providerUnavailable(
-            ProviderUnavailableException e
+    @Override
+    protected ResponseEntity<Object> createResponseEntity(
+            Object body, HttpHeaders headers, HttpStatusCode status, WebRequest request
     ) {
-        return error(
-                HttpStatus.SERVICE_UNAVAILABLE,
-                "PROVIDER_UNAVAILABLE",
-                e.getMessage()
-        );
+        ErrorCode code = status.is4xxClientError() ? ErrorCode.BAD_REQUEST : ErrorCode.INTERNAL_ERROR;
+        String message = status.is4xxClientError()
+                ? "Request is invalid" : "An unexpected error occurred";
+        return new ResponseEntity<>(new ApiError(Instant.now(), status.value(), code, message),
+                headers, status);
     }
 
-    @ExceptionHandler(WebClientException.class)
-    public ResponseEntity<Map<String, Object>> providerRequestFailed(
-            WebClientException e
-    ) {
-        return error(
-                HttpStatus.SERVICE_UNAVAILABLE,
-                "PROVIDER_UNAVAILABLE",
-                "Payment provider request failed"
-        );
-    }
-
-    @ExceptionHandler(RefundLimitExceededException.class)
-    public ResponseEntity<Map<String, Object>> refundLimitExceeded(
-            RefundLimitExceededException e
-    ) {
-        return error(
-                HttpStatus.CONFLICT,
-                "REFUND_LIMIT_EXCEEDED",
-                e.getMessage()
-        );
-    }
-
-    @ExceptionHandler(
-            IllegalArgumentException.class
-    )
-    public ResponseEntity<Map<String, Object>>
-    badRequest(
-            IllegalArgumentException e
-    ) {
-
-        return ResponseEntity
-                .badRequest()
-                .body(
-                        Map.of(
-                                "timestamp",
-                                Instant.now()
-                                        .toString(),
-
-                                "status",
-                                400,
-
-                                "error",
-                                "BAD_REQUEST",
-
-                                "message",
-                                e.getMessage()
-                        )
-                );
-    }
-
-
-    @ExceptionHandler(
-            IllegalStateException.class
-    )
-    public ResponseEntity<Map<String, Object>>
-    conflict(
-            IllegalStateException e
-    ) {
-
-        return ResponseEntity
-                .status(
-                        HttpStatus.CONFLICT
-                )
-                .body(
-                        Map.of(
-                                "timestamp",
-                                Instant.now()
-                                        .toString(),
-
-                                "status",
-                                409,
-
-                                "error",
-                                "CONFLICT",
-
-                                "message",
-                                e.getMessage()
-                        )
-                );
-    }
-
-    private ResponseEntity<Map<String, Object>> error(
-            HttpStatus status,
-            String error,
-            String message
-    ) {
+    private ResponseEntity<ApiError> error(HttpStatus status, ErrorCode code, String message) {
         return ResponseEntity.status(status)
-                .body(Map.of(
-                        "timestamp", Instant.now().toString(),
-                        "status", status.value(),
-                        "error", error,
-                        "message", message
-                ));
+                .body(new ApiError(Instant.now(), status.value(), code, message));
     }
 }

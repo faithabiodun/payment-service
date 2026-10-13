@@ -1,5 +1,8 @@
 package com.faith.pay.webhook;
 
+import com.faith.pay.error.AppException;
+import com.faith.pay.error.ErrorCode;
+
 import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
 
@@ -41,11 +44,8 @@ public class PaystackWebhookController {
                 signature
         )) {
 
-            return ResponseEntity
-                    .status(
-                            HttpStatus.UNAUTHORIZED
-                    )
-                    .build();
+            throw new AppException(ErrorCode.INVALID_WEBHOOK_SIGNATURE, HttpStatus.UNAUTHORIZED,
+                    "Webhook signature is invalid or missing");
         }
 
 

@@ -1,5 +1,8 @@
 package com.faith.pay.webhook;
 
+import com.faith.pay.error.*;
+import org.springframework.http.HttpStatus;
+
 import tools.jackson.databind.ObjectMapper;
 
 import com.faith.pay.payment.PaymentCompletionService;
@@ -96,9 +99,11 @@ public class WebhookService {
                     rawJson
             );
 
-        } catch (Exception e) {
+        } catch (AppException e) {
+            throw e;
+        } catch (tools.jackson.core.JacksonException e) {
 
-            throw new IllegalStateException(
+            throw new AppException(ErrorCode.INVALID_WEBHOOK_PAYLOAD, HttpStatus.BAD_REQUEST,
                     "Could not process webhook",
                     e
             );

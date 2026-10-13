@@ -1,8 +1,9 @@
 package com.faith.pay.payment;
 
+import com.faith.pay.error.*;
+import org.springframework.http.HttpStatus;
+
 import com.faith.pay.order.*;
-import com.faith.pay.error.OrderNotFoundException;
-import com.faith.pay.error.PaymentAlreadySuccessfulException;
 import com.faith.pay.payment.dto.*;
 import com.faith.pay.provider.PaystackClient;
 import com.faith.pay.provider.dto.PaystackInitializeData;
@@ -53,7 +54,7 @@ public class PaymentService {
         if (idempotencyKey == null
                 || idempotencyKey.isBlank()) {
 
-            throw new IllegalArgumentException(
+            throw new AppException(ErrorCode.BAD_REQUEST, HttpStatus.BAD_REQUEST,
                     "Idempotency-Key is required"
             );
         }
@@ -75,10 +76,7 @@ public class PaymentService {
                     .getId()
                     .equals(request.orderId())) {
 
-                throw new IllegalArgumentException(
-                        "Idempotency key was used " +
-                                "for another request"
-                );
+                throw new IdempotencyKeyReuseException();
             }
 
             return InitializePaymentResponse
@@ -99,7 +97,7 @@ public class PaymentService {
                         )
                         .orElseThrow(() ->
                                 new OrderNotFoundException(
-                                        "Order not found"
+                                        request.orderId()
                                 )
                         );
 
@@ -125,9 +123,7 @@ public class PaymentService {
         if (order.getStatus()
                 == OrderStatus.PAID) {
 
-            throw new PaymentAlreadySuccessfulException(
-                    "Order is already paid"
-            );
+            throw new OrderAlreadyPaidException(order.getId());
         }
 
 
@@ -139,10 +135,10 @@ public class PaymentService {
 
         if (open.isPresent()) {
 
-            throw new IllegalStateException(
-                    "There is already a payment " +
-                            "in progress for this order"
-            );
+            if (open.get().getStatus() == PaymentStatus.PENDING) {
+                throw new PaymentInitializationInProgressException(order.getId());
+            }
+            throw new PaymentAlreadyInProgressException(order.getId());
         }
 
 
@@ -206,9 +202,7 @@ public class PaymentService {
                 paymentRepository
                         .findByReference(reference)
                         .orElseThrow(() ->
-                                new IllegalArgumentException(
-                                        "Payment not found"
-                                )
+                                new PaymentNotFoundException(reference)
                         );
 
         return PaymentResponse.from(payment);

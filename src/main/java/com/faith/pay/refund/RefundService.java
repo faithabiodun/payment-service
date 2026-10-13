@@ -1,9 +1,11 @@
 package com.faith.pay.refund;
 
+import com.faith.pay.error.*;
+import org.springframework.http.HttpStatus;
+
 import com.faith.pay.payment.Payment;
 import com.faith.pay.payment.PaymentRepository;
 import com.faith.pay.payment.PaymentStatus;
-import com.faith.pay.error.RefundLimitExceededException;
 import com.faith.pay.provider.PaystackClient;
 import com.faith.pay.provider.dto.PaystackRefundData;
 
@@ -39,7 +41,7 @@ public class RefundService {
         if (idempotencyKey == null
                 || idempotencyKey.isBlank()) {
 
-            throw new IllegalArgumentException(
+            throw new AppException(ErrorCode.BAD_REQUEST, HttpStatus.BAD_REQUEST,
                     "Idempotency-Key is required"
             );
         }
@@ -47,13 +49,13 @@ public class RefundService {
         if (paymentReference == null
                 || paymentReference.isBlank()) {
 
-            throw new IllegalArgumentException(
+            throw new AppException(ErrorCode.BAD_REQUEST, HttpStatus.BAD_REQUEST,
                     "Payment reference is required"
             );
         }
 
         if (amountKobo <= 0) {
-            throw new IllegalArgumentException(
+            throw new AppException(ErrorCode.BAD_REQUEST, HttpStatus.BAD_REQUEST,
                     "Refund amount must be positive"
             );
         }
@@ -75,9 +77,7 @@ public class RefundService {
 
         Payment payment = paymentRepository
                 .findByReferenceForUpdate(paymentReference)
-                .orElseThrow(() -> new IllegalArgumentException(
-                        "Payment not found"
-                ));
+                .orElseThrow(() -> new PaymentNotFoundException(paymentReference));
 
         // Recheck after taking the payment lock to serialize concurrent refunds.
         existing = refundRepository
@@ -98,7 +98,7 @@ public class RefundService {
         if (payment.getStatus() != PaymentStatus.SUCCESS
                 && payment.getStatus() != PaymentStatus.PARTIALLY_REFUNDED) {
 
-            throw new IllegalStateException(
+            throw new AppException(ErrorCode.REFUND_NOT_ALLOWED, HttpStatus.CONFLICT,
                     "Only successful payments can be refunded"
             );
         }
@@ -107,7 +107,7 @@ public class RefundService {
                 .totalReservedRefundAmount(payment.getId());
 
         if (amountKobo > payment.getAmountKobo() - reserved) {
-            throw new RefundLimitExceededException(
+            throw new AppException(ErrorCode.REFUND_EXCEEDS_REMAINING_AMOUNT, HttpStatus.CONFLICT,
                     "Refund amount exceeds the remaining refundable amount"
             );
         }
@@ -133,7 +133,7 @@ public class RefundService {
         if (providerStatus == null
                 || providerStatus.isBlank()) {
 
-            throw new IllegalStateException(
+            throw new AppException(ErrorCode.PROVIDER_RESPONSE_INVALID, HttpStatus.BAD_GATEWAY,
                     "Paystack returned a refund without a status"
             );
         }
@@ -165,9 +165,7 @@ public class RefundService {
                 || refund.getAmountKobo() != amountKobo
                 || !java.util.Objects.equals(refund.getReason(), reason)) {
 
-            throw new IllegalArgumentException(
-                    "Idempotency key was used for another request"
-            );
+            throw new IdempotencyKeyReuseException();
         }
     }
 

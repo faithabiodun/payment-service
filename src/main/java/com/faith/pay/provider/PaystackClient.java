@@ -1,7 +1,9 @@
 package com.faith.pay.provider;
 
+import com.faith.pay.error.*;
+import org.springframework.http.HttpStatus;
+
 import com.faith.pay.config.PaystackProperties;
-import com.faith.pay.error.ProviderUnavailableException;
 import com.faith.pay.provider.dto.*;
 
 import org.springframework.core.ParameterizedTypeReference;
@@ -61,9 +63,7 @@ public class PaystackClient {
                 || !response.status()
                 || response.data() == null) {
 
-            throw new ProviderUnavailableException(
-                    "Paystack initialization failed"
-            );
+            throw new ProviderCommunicationException("Paystack initialization failed");
         }
 
         return response.data();
@@ -98,9 +98,7 @@ public class PaystackClient {
                 || !response.status()
                 || response.data() == null) {
 
-            throw new ProviderUnavailableException(
-                    "Paystack verification failed"
-            );
+            throw new ProviderCommunicationException("Paystack verification failed");
         }
 
         return response.data();
@@ -144,9 +142,7 @@ public class PaystackClient {
                 || !response.status()
                 || response.data() == null) {
 
-            throw new ProviderUnavailableException(
-                    "Refund request failed"
-            );
+            throw new ProviderCommunicationException("Refund request failed");
         }
 
 
