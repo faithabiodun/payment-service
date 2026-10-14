@@ -104,6 +104,8 @@ public class PaymentCompletionService {
 
         payment.markSuccessful(
                 data.id().toString(),
+                data.channel(),
+                data.fees() == null ? 0L : data.fees(),
                 data.paidAt()
         );
 
