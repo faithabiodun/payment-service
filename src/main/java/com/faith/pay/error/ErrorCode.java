@@ -16,6 +16,8 @@ public enum ErrorCode {
 
     INVALID_PAYMENT_STATE,
 
+    PAYMENT_REFERENCE_MISMATCH,
+
     PAYMENT_AMOUNT_MISMATCH,
 
     PAYMENT_CURRENCY_MISMATCH,
@@ -37,4 +39,6 @@ public enum ErrorCode {
     INVALID_WEBHOOK_PAYLOAD,
 
     INTERNAL_ERROR
+
+
 }
