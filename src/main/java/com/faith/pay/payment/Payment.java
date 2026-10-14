@@ -40,6 +40,12 @@ public class Payment {
     @Column(nullable = false, length = 3)
     private String currency = "NGN";
 
+    @Column(name="channel")
+    private String channel;
+
+    @Column(name = "fees_kobo")
+    private long feesKobo;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private PaymentStatus status =
@@ -118,6 +124,8 @@ public class Payment {
 
     public void markSuccessful(
             String providerTransactionId,
+            String channel,
+            long feesKobo,
             Instant paidAt
     ) {
         this.providerTransactionId =
@@ -127,6 +135,10 @@ public class Payment {
 
         this.status =
                 PaymentStatus.SUCCESS;
+
+        this.channel = channel;
+
+        this.feesKobo = feesKobo;
     }
 
     public void markPartiallyRefunded() {
@@ -204,5 +216,17 @@ public class Payment {
 
     public Instant getUpdatedAt() {
         return updatedAt;
+    }
+
+    public long getFeesKobo() {
+        return feesKobo;
+    }
+
+    public String getChannel() {
+        return channel;
+    }
+
+    public Instant paidAt() {
+        return paidAt;
     }
 }
