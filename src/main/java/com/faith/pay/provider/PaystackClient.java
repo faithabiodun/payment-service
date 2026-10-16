@@ -74,36 +74,59 @@ public class PaystackClient {
             String reference
     ) {
 
-        PaystackResponse<PaystackTransactionData> response;
         try {
-            response = webClient
-                        .get()
-                        .uri(
-                                "/transaction/verify/{reference}",
-                                reference
-                        )
-                        .retrieve()
-                        .bodyToMono(
-                                new ParameterizedTypeReference<
-                                        PaystackResponse<
-                                                PaystackTransactionData
-                                                >
-                                        >() {
-                                }
-                        )
-                        .block(Duration.ofSeconds(10));
-        } catch (RuntimeException failure) {
-            throw new ProviderCommunicationException("Paystack verification request failed", failure);
+            PaystackResponse<PaystackTransactionData> response =
+                    webClient
+                            .get()
+                            .uri(
+                                    "/transaction/verify/{reference}",
+                                    reference
+                            )
+                            .retrieve()
+                            .bodyToMono(
+                                    new ParameterizedTypeReference<
+                                            PaystackResponse<
+                                                    PaystackTransactionData
+                                                    >
+                                            >() {
+                                    }
+                            )
+                            .block(Duration.ofSeconds(10));
+
+            if (response == null) {
+                throw new ProviderCommunicationException(
+                        "Paystack returned no verification response",
+                        null
+                );
+            }
+
+            /*
+             * This status describes whether the Paystack API request itself succeeded.
+             * It does not mean the financial payment was successful.
+             */
+            if (!response.status()) {
+                throw new ProviderCommunicationException(
+                        "Paystack could not verify transaction: " + response.message(),
+                        null
+                );
+            }
+
+            if (response.data() == null) {
+                throw new ProviderCommunicationException(
+                        "Paystack verification response contained no transaction data",
+                        null
+                );
+            }
+
+            return response.data();
+        } catch (ProviderCommunicationException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new ProviderCommunicationException(
+                    "Could not verify payment with Paystack",
+                    e
+            );
         }
-
-        if (response == null
-                || !response.status()
-                || response.data() == null) {
-
-            throw new ProviderCommunicationException("Paystack verification failed");
-        }
-
-        return response.data();
     }
 
     public PaystackRefundData refund(
