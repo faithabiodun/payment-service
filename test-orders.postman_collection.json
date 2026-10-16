@@ -109,8 +109,22 @@
           "host": ["{{baseUrl}}"],
           "path": ["api", "v1", "payments", "{{reference}}", "verify"]
         },
-        "description": "Run after Initialize Payment completes checkout with Paystack. Uses the reference saved from the initialize response and returns the verified payment status."
+        "description": "Run after completing checkout with Paystack for this reference. The response contains providerStatus (Paystack's financial transaction status), settlementApplied (whether this call applied settlement), and payment (the current local PaymentResponse). The Simulate Paystack Success Webhook request only changes local state; it does not create a Paystack transaction, so it cannot make this verification return providerStatus success."
       },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const result = pm.response.json();",
+              "if (result.providerStatus) pm.collectionVariables.set('providerStatus', result.providerStatus);",
+              "if (result.payment && result.payment.status) pm.collectionVariables.set('paymentStatus', result.payment.status);",
+              "if (result.settlementApplied !== undefined) pm.collectionVariables.set('settlementApplied', String(result.settlementApplied));"
+            ]
+          }
+        }
+      ],
       "response": []
     },
     {
@@ -152,6 +166,25 @@
           }
         }
       ],
+      "response": []
+    },
+    {
+      "name": "Paystack Callback",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Accept", "value": "application/json" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/payments/callback?reference={{reference}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "v1", "payments", "callback"],
+          "query": [
+            { "key": "reference", "value": "{{reference}}" }
+          ]
+        },
+        "description": "Paystack return URL endpoint. It only returns the reference and a message; it does not verify or settle the payment. Use Verify Payment to contact Paystack and update local payment state."
+      },
       "response": []
     },
     {
