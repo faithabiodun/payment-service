@@ -18,6 +18,12 @@ public record PaymentResponse(
 
         String status,
 
+        String providerTransactionId,
+
+        String channel,
+
+        Long feesKobo,
+
         long refundedKobo,
 
         Instant paidAt,
@@ -33,14 +39,34 @@ public record PaymentResponse(
 
         return new PaymentResponse(
                 payment.getId(),
+
                 payment.getReference(),
-                payment.getOrder().getId(),
+
+                payment
+                        .getOrder()
+                        .getId(),
+
                 payment.getAmountKobo(),
+
                 payment.getCurrency(),
-                payment.getStatus().name(),
+
+                payment
+                        .getStatus()
+                        .name(),
+
+                payment
+                        .getProviderTransactionId(),
+
+                payment.getChannel(),
+
+                payment.getFeesKobo(),
+
                 payment.getRefundedKobo(),
+
                 payment.getPaidAt(),
+
                 payment.getCreatedAt(),
+
                 payment.getUpdatedAt()
         );
     }
