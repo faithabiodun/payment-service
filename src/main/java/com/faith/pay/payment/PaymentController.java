@@ -1,6 +1,7 @@
 package com.faith.pay.payment;
 
 import com.faith.pay.payment.dto.*;
+import com.faith.pay.provider.dto.VerifyPaymentResponse;
 
 import jakarta.validation.Valid;
 
@@ -46,7 +47,7 @@ public class PaymentController {
     }
 
     @PostMapping("/{reference}/verify")
-    public PaymentResponse verify(
+    public VerifyPaymentResponse verify(
             @PathVariable
             String reference
     ) {
