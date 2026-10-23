@@ -8,40 +8,73 @@ import org.springframework.web.bind.annotation.*;
 public class PaystackWebhookController {
 
     private final WebhookVerifier verifier;
+
     private final WebhookService service;
+
 
     public PaystackWebhookController(
             WebhookVerifier verifier,
             WebhookService service
     ) {
+
         this.verifier = verifier;
+
         this.service = service;
     }
 
+
     @PostMapping
     public ResponseEntity<Void> receive(
-            @RequestBody byte[] rawBody,
+
+            @RequestBody
+            byte[] rawBody,
+
             @RequestHeader(
                     value = "x-paystack-signature",
                     required = false
-            ) String signature
+            )
+            String signature
     ) {
+
+
         /*
          * SECURITY BOUNDARY.
+         *
          * Nothing is parsed.
          * Nothing touches the database.
-         * Nothing reaches business logic until authentication succeeds.
+         * Nothing reaches business logic.
+         *
+         * until authentication succeeds.
          */
-        if (!verifier.isValid(rawBody, signature)) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        if (!verifier.isValid(
+                rawBody,
+                signature
+        )) {
+
+            return ResponseEntity
+                    .status(
+                            HttpStatus.UNAUTHORIZED
+                    )
+                    .build();
         }
+
 
         /*
          * Processing is deliberately small:
-         * parse, claim event, lock payment, settle, commit.
+         *
+         * parse
+         * claim event
+         * lock payment
+         * settle
+         * commit
          */
-        service.process(rawBody);
+        service.process(
+                rawBody
+        );
 
-        return ResponseEntity.ok().build();
+
+        return ResponseEntity
+                .ok()
+                .build();
     }
 }
