@@ -17,7 +17,8 @@ public class SecurityConfig {
                 .csrf(AbstractHttpConfigurer::disable)
 
                 .authorizeHttpRequests(auth ->
-                        auth.anyRequest().permitAll()
+                        auth.requestMatchers("/webhooks/paystack").permitAll()
+                                .anyRequest().permitAll()
                 );
 
         return http.build();

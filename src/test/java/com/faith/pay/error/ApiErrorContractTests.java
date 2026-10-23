@@ -1,6 +1,6 @@
 package com.faith.pay.error;
 
-import com.faith.pay.payment.PaymentCompletionService;
+import com.faith.pay.payment.PaymentSettlementService;
 import com.faith.pay.payment.audit.PaymentEventSource;
 import com.faith.pay.payment.PaymentController;
 import com.faith.pay.payment.PaymentService;
@@ -74,11 +74,11 @@ class ApiErrorContractTests {
     }
 
     @Test
-    void invalidSignatureReturnsJsonError() throws Exception {
+    void invalidSignatureReturnsUnauthorized() throws Exception {
         mvc.perform(post("/webhooks/paystack")
                         .contentType(MediaType.APPLICATION_JSON).content("{}"))
                 .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.error").value("INVALID_WEBHOOK_SIGNATURE"));
+                .andExpect(content().string(""));
         verifyNoInteractions(webhooks);
     }
 
@@ -115,14 +115,14 @@ class ApiErrorContractTests {
     @Test
     void webhookPreservesCompletionError() {
         ProviderEventDeduplicator deduplicator = mock(ProviderEventDeduplicator.class);
-        PaymentCompletionService completion = mock(PaymentCompletionService.class);
+        PaymentSettlementService settlement = mock(PaymentSettlementService.class);
         when(deduplicator.claim("charge.success", "1")).thenReturn(true);
         AppException failure = new AppException(ErrorCode.PAYMENT_AMOUNT_MISMATCH,
                 HttpStatus.UNPROCESSABLE_ENTITY, "Payment amount mismatch");
-        doThrow(failure).when(completion)
-                .applySuccess(any(PaystackTransactionData.class),
+        doThrow(failure).when(settlement)
+                .settleSuccess(eq("PAY-test"), any(PaystackTransactionData.class),
                         eq(PaymentEventSource.WEBHOOK), any());
-        WebhookService service = new WebhookService(new ObjectMapper(), deduplicator, completion);
+        WebhookService service = new WebhookService(new ObjectMapper(), deduplicator, settlement);
         byte[] body = ("{\"event\":\"charge.success\",\"data\":{\"id\":1,"
                 + "\"reference\":\"PAY-test\",\"status\":\"success\",\"amount\":100,\"currency\":\"NGN\"}}")
                 .getBytes(StandardCharsets.UTF_8);
@@ -131,12 +131,10 @@ class ApiErrorContractTests {
     }
 
     @Test
-    void malformedWebhookReturnsPayloadCode() {
+    void malformedWebhookPreservesParsingError() {
         WebhookService service = new WebhookService(new ObjectMapper(),
-                mock(ProviderEventDeduplicator.class), mock(PaymentCompletionService.class));
-        AppException failure = assertThrows(AppException.class,
+                mock(ProviderEventDeduplicator.class), mock(PaymentSettlementService.class));
+        assertThrows(tools.jackson.core.JacksonException.class,
                 () -> service.process("{".getBytes(StandardCharsets.UTF_8)));
-        assertSame(ErrorCode.INVALID_WEBHOOK_PAYLOAD, failure.getCode());
-        assertSame(HttpStatus.BAD_REQUEST, failure.getStatus());
     }
 }

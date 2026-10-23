@@ -1,8 +1,5 @@
 package com.faith.pay.webhook;
 
-import com.faith.pay.error.AppException;
-import com.faith.pay.error.ErrorCode;
-
 import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
 
@@ -21,42 +18,30 @@ public class PaystackWebhookController {
         this.service = service;
     }
 
-
     @PostMapping
     public ResponseEntity<Void> receive(
-
-            @RequestBody
-            byte[] rawBody,
-
+            @RequestBody byte[] rawBody,
             @RequestHeader(
                     value = "x-paystack-signature",
                     required = false
-            )
-            String signature
+            ) String signature
     ) {
-
-
         /*
-         * Authentication FIRST.
+         * SECURITY BOUNDARY.
+         * Nothing is parsed.
+         * Nothing touches the database.
+         * Nothing reaches business logic until authentication succeeds.
          */
-        if (!verifier.isValid(
-                rawBody,
-                signature
-        )) {
-
-            throw new AppException(ErrorCode.INVALID_WEBHOOK_SIGNATURE, HttpStatus.UNAUTHORIZED,
-                    "Webhook signature is invalid or missing");
+        if (!verifier.isValid(rawBody, signature)) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
 
-
         /*
-         * Only trusted data reaches
-         * business logic.
+         * Processing is deliberately small:
+         * parse, claim event, lock payment, settle, commit.
          */
         service.process(rawBody);
 
-
-        return ResponseEntity.ok()
-                .build();
+        return ResponseEntity.ok().build();
     }
 }
