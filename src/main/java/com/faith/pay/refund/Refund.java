@@ -27,7 +27,10 @@ public class Refund {
     )
     private String reference;
 
-    @Column(name = "provider_refund_id")
+    @Column(
+            name = "provider_refund_id",
+            unique = true
+    )
     private String providerRefundId;
 
     @Column(name = "provider_status")
@@ -42,6 +45,7 @@ public class Refund {
     private String reason;
 
     @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
     private RefundStatus status =
             RefundStatus.PENDING;
 
