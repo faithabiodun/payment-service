@@ -72,6 +72,7 @@ public class RefundCommandService {
                 payment,
                 newReference(),
                 requested,
+                request.amountKobo(),
                 request.reason(),
                 idempotencyKey
         );
@@ -154,8 +155,10 @@ public class RefundCommandService {
             RefundRequest request,
             String idempotencyKey
     ) {
-        boolean amountMatches = request.amountKobo() == null
-                || refund.getAmountKobo() == request.amountKobo();
+        boolean amountMatches = Objects.equals(
+                refund.getRequestedAmountKobo(),
+                request.amountKobo()
+        );
         if (!refund.getPayment().getReference().equals(paymentReference)
                 || !amountMatches
                 || !Objects.equals(refund.getReason(), request.reason())

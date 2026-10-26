@@ -42,6 +42,9 @@ public class Refund {
     )
     private long amountKobo;
 
+    @Column(name = "requested_amount_kobo")
+    private Long requestedAmountKobo;
+
     private String reason;
 
     @Enumerated(EnumType.STRING)
@@ -72,12 +75,14 @@ public class Refund {
             Payment payment,
             String reference,
             long amountKobo,
+            Long requestedAmountKobo,
             String reason,
             String idempotencyKey
     ) {
         this.payment = payment;
         this.reference = reference;
         this.amountKobo = amountKobo;
+        this.requestedAmountKobo = requestedAmountKobo;
         this.reason = reason;
         this.idempotencyKey =
                 idempotencyKey;
@@ -138,6 +143,10 @@ public class Refund {
 
     public long getAmountKobo() {
         return amountKobo;
+    }
+
+    public Long getRequestedAmountKobo() {
+        return requestedAmountKobo;
     }
 
     public String getReason() {
