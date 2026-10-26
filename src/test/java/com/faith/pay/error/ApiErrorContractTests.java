@@ -1,14 +1,12 @@
 package com.faith.pay.error;
 
-import com.faith.pay.payment.PaymentSettlementService;
-import com.faith.pay.payment.audit.PaymentEventSource;
 import com.faith.pay.payment.PaymentController;
 import com.faith.pay.payment.PaymentService;
-import com.faith.pay.provider.dto.PaystackTransactionData;
 import com.faith.pay.webhook.PaystackWebhookController;
-import com.faith.pay.webhook.ProviderEventDeduplicator;
+import com.faith.pay.webhook.ChargeWebhookService;
 import com.faith.pay.webhook.WebhookService;
 import com.faith.pay.webhook.WebhookVerifier;
+import com.faith.pay.refund.RefundWebhookService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
@@ -114,15 +112,12 @@ class ApiErrorContractTests {
 
     @Test
     void webhookPreservesCompletionError() {
-        ProviderEventDeduplicator deduplicator = mock(ProviderEventDeduplicator.class);
-        PaymentSettlementService settlement = mock(PaymentSettlementService.class);
-        when(deduplicator.claim("charge.success", "1")).thenReturn(true);
+        ChargeWebhookService charges = mock(ChargeWebhookService.class);
+        RefundWebhookService refunds = mock(RefundWebhookService.class);
         AppException failure = new AppException(ErrorCode.PAYMENT_AMOUNT_MISMATCH,
                 HttpStatus.UNPROCESSABLE_ENTITY, "Payment amount mismatch");
-        doThrow(failure).when(settlement)
-                .settleSuccess(eq("PAY-test"), any(PaystackTransactionData.class),
-                        eq(PaymentEventSource.WEBHOOK), any());
-        WebhookService service = new WebhookService(new ObjectMapper(), deduplicator, settlement);
+        doThrow(failure).when(charges).process(any(), any());
+        WebhookService service = new WebhookService(new ObjectMapper(), charges, refunds);
         byte[] body = ("{\"event\":\"charge.success\",\"data\":{\"id\":1,"
                 + "\"reference\":\"PAY-test\",\"status\":\"success\",\"amount\":100,\"currency\":\"NGN\"}}")
                 .getBytes(StandardCharsets.UTF_8);
@@ -133,7 +128,7 @@ class ApiErrorContractTests {
     @Test
     void malformedWebhookPreservesParsingError() {
         WebhookService service = new WebhookService(new ObjectMapper(),
-                mock(ProviderEventDeduplicator.class), mock(PaymentSettlementService.class));
+                mock(ChargeWebhookService.class), mock(RefundWebhookService.class));
         assertThrows(tools.jackson.core.JacksonException.class,
                 () -> service.process("{".getBytes(StandardCharsets.UTF_8)));
     }
