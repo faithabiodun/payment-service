@@ -157,13 +157,24 @@ public class Payment {
             throw new IllegalArgumentException("Refund amount must be positive");
         }
 
-        long next = refundedKobo + amount;
+        if (status != PaymentStatus.SUCCESS
+                && status != PaymentStatus.PARTIALLY_REFUNDED) {
+            throw new IllegalStateException(
+                    "Only successful payments can be refunded"
+            );
+        }
 
-        if (next > amountKobo) {
+        if (refundedKobo < 0 || refundedKobo > amountKobo) {
+            throw new IllegalStateException(
+                    "Refunded amount is outside the payment amount"
+            );
+        }
+
+        if (amount > amountKobo - refundedKobo) {
             throw new IllegalStateException("Refund would exceed payment amount");
         }
 
-        refundedKobo = next;
+        refundedKobo += amount;
 
         if (refundedKobo == amountKobo) {
             markRefunded();
