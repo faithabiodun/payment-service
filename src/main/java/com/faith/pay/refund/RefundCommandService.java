@@ -57,7 +57,7 @@ public class RefundCommandService {
             throw new RefundNotAllowedException("Only successful payments can be refunded");
         }
 
-        long reserved = refunds.totalReservedRefundAmount(payment.getId());
+        long reserved = refunds.sumReservedAmount(payment.getId());
         long remaining = payment.getAmountKobo() - reserved;
         long requested = request.amountKobo() == null ? remaining : request.amountKobo();
 

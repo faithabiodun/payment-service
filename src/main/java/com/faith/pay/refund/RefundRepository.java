@@ -37,7 +37,22 @@ public interface RefundRepository extends JpaRepository<Refund, Long> {
             WHERE payment_id = :paymentId
               AND status IN ('PENDING', 'PROCESSING', 'NEEDS_ATTENTION', 'SUCCESS')
             """, nativeQuery = true)
-    long totalReservedRefundAmount(@Param("paymentId") Long paymentId);
+    long sumReservedAmount(@Param("paymentId") Long paymentId);
 
     List<Refund> findByStatusIn(Collection<RefundStatus> statuses);
+
+    @Query("""
+            select r
+            from Refund r
+            join fetch r.payment p
+            where p.reference = :paymentReference
+              and r.status in (
+                  com.faith.pay.refund.RefundStatus.PENDING,
+                  com.faith.pay.refund.RefundStatus.PROCESSING,
+                  com.faith.pay.refund.RefundStatus.NEEDS_ATTENTION
+              )
+            """)
+    List<Refund> findNonTerminalByPaymentReference(
+            @Param("paymentReference") String paymentReference
+    );
 }
