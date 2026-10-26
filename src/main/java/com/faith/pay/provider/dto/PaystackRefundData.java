@@ -1,5 +1,7 @@
 package com.faith.pay.provider.dto;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 import java.math.BigInteger;
 import java.time.Instant;
 
@@ -13,10 +15,10 @@ public record PaystackRefundData(
 
         String currency,
 
-        @com.fasterxml.jackson.annotation.JsonProperty("expected_at")
+        @JsonProperty("expected_at")
         Instant expectedAt,
 
-        @com.fasterxml.jackson.annotation.JsonProperty("refunded_at")
+        @JsonProperty("refunded_at")
         Instant refundedAt
 ) {
 }

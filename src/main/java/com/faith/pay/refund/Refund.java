@@ -104,29 +104,32 @@ public class Refund {
             String providerRefundId,
             String providerStatus
     ) {
-        this.providerRefundId =
-                providerRefundId;
-
-        this.providerStatus = providerStatus;
-        status =
-                RefundStatus.PROCESSING;
+        recordProviderState(providerRefundId, providerStatus);
+        status = RefundStatus.PROCESSING;
     }
 
-    public void markNeedsAttention(String providerStatus) {
-        this.providerStatus = providerStatus;
+    public void markNeedsAttention(String providerRefundId, String providerStatus) {
+        recordProviderState(providerRefundId, providerStatus);
         status = RefundStatus.NEEDS_ATTENTION;
     }
 
-    public void markSuccessful(String providerStatus) {
-        this.providerStatus = providerStatus;
+    public void markSuccessful(String providerRefundId, String providerStatus) {
+        recordProviderState(providerRefundId, providerStatus);
         status = RefundStatus.SUCCESS;
         completedAt = Instant.now();
     }
 
-    public void markFailed(String providerStatus) {
-        this.providerStatus = providerStatus;
+    public void markFailed(String providerRefundId, String providerStatus) {
+        recordProviderState(providerRefundId, providerStatus);
         status = RefundStatus.FAILED;
         completedAt = Instant.now();
+    }
+
+    private void recordProviderState(String providerRefundId, String providerStatus) {
+        if (providerRefundId != null) {
+            this.providerRefundId = providerRefundId;
+        }
+        this.providerStatus = providerStatus;
     }
 
     public Long getId() {

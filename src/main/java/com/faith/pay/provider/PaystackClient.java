@@ -132,14 +132,23 @@ public class PaystackClient {
     public PaystackRefundData createRefund(
             String transactionReference,
             long amountKobo,
-            String localRefundReference
+            String localRefundReference,
+            String reason
     ) {
+
+        String merchantNote = "Local refund: " + localRefundReference;
+        if (reason != null && !reason.isBlank()) {
+            merchantNote += " | " + reason;
+        }
+        if (merchantNote.length() > 255) {
+            merchantNote = merchantNote.substring(0, 255);
+        }
 
         PaystackRefundRequest request =
                 new PaystackRefundRequest(
                         transactionReference,
                         amountKobo,
-                        "Local refund: " + localRefundReference
+                        merchantNote
                 );
 
 

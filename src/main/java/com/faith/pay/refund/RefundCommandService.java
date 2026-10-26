@@ -4,7 +4,6 @@ import com.faith.pay.error.*;
 import com.faith.pay.payment.*;
 import com.faith.pay.payment.audit.*;
 import com.faith.pay.refund.dto.RefundRequest;
-import com.faith.pay.provider.dto.PaystackRefundData;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -36,6 +35,14 @@ public class RefundCommandService {
             String idempotencyKey
     ) {
         validateInputs(paymentReference, idempotencyKey);
+        if (request == null) {
+            throw new AppException(ErrorCode.BAD_REQUEST, HttpStatus.BAD_REQUEST,
+                    "Refund request is required");
+        }
+        if (request.amountKobo() != null && request.amountKobo() <= 0) {
+            throw new AppException(ErrorCode.BAD_REQUEST, HttpStatus.BAD_REQUEST,
+                    "Refund amount must be positive");
+        }
 
         Refund existing = refunds.findByIdempotencyKey(idempotencyKey).orElse(null);
         if (existing != null) {
@@ -53,7 +60,8 @@ public class RefundCommandService {
             return reservation(existing, false);
         }
 
-        if (!payment.getStatus().hasSuccessfulCharge()) {
+        if (payment.getStatus() != PaymentStatus.SUCCESS
+                && payment.getStatus() != PaymentStatus.PARTIALLY_REFUNDED) {
             throw new RefundNotAllowedException("Only successful payments can be refunded");
         }
 
@@ -80,62 +88,6 @@ public class RefundCommandService {
         events.append(payment, PaymentEventType.REFUND_REQUESTED,
                 payment.getStatus(), payment.getStatus(), PaymentEventSource.REFUND, null);
         return reservation(refund, true);
-    }
-
-    @Transactional
-    public Refund applyProviderResult(String refundReference, PaystackRefundData provider) {
-        Refund refund = refunds.findByReferenceForUpdate(refundReference)
-                .orElseThrow(() -> new AppException(
-                        ErrorCode.REFUND_NOT_FOUND,
-                        HttpStatus.NOT_FOUND,
-                        "Refund not found: " + refundReference
-                ));
-
-        Payment payment = payments.findByReferenceForUpdate(refund.getPayment().getReference())
-                .orElseThrow(() -> new PaymentNotFoundException(refund.getPayment().getReference()));
-
-        if (refund.getStatus().isTerminal()) {
-            return refund;
-        }
-
-        String providerStatus = provider.status();
-        if (providerStatus == null || providerStatus.isBlank()) {
-            throw new AppException(ErrorCode.PROVIDER_RESPONSE_INVALID, HttpStatus.BAD_GATEWAY,
-                    "Paystack returned a refund without a status");
-        }
-        if (provider.id() == null) {
-            throw new AppException(ErrorCode.PROVIDER_RESPONSE_INVALID, HttpStatus.BAD_GATEWAY,
-                    "Paystack returned a refund without an id");
-        }
-
-        PaymentStatus paymentStatus = payment.getStatus();
-        String normalized = providerStatus.toLowerCase();
-        events.append(payment, PaymentEventType.REFUND_SUBMITTED,
-                paymentStatus, paymentStatus, PaymentEventSource.REFUND, null);
-        if ("processed".equals(normalized) || "success".equals(normalized)) {
-            if (provider.amount() != refund.getAmountKobo()) {
-                throw new AppException(ErrorCode.PROVIDER_RESPONSE_INVALID, HttpStatus.BAD_GATEWAY,
-                        "Paystack refund amount did not match the reserved amount");
-            }
-            refund.markSuccessful(providerStatus);
-            payment.addRefundedKobo(refund.getAmountKobo());
-            events.append(payment, PaymentEventType.REFUND_SUCCEEDED,
-                    paymentStatus, payment.getStatus(), PaymentEventSource.REFUND, null);
-        } else if ("failed".equals(normalized)) {
-            refund.markFailed(providerStatus);
-            events.append(payment, PaymentEventType.REFUND_FAILED,
-                    paymentStatus, paymentStatus, PaymentEventSource.REFUND, null);
-        } else if ("needs_attention".equals(normalized) || "needs-attention".equals(normalized)) {
-            refund.markNeedsAttention(providerStatus);
-            events.append(payment, PaymentEventType.REFUND_NEEDS_ATTENTION,
-                    paymentStatus, paymentStatus, PaymentEventSource.REFUND, null);
-        } else {
-            refund.markProcessing(provider.id().toString(), providerStatus);
-            events.append(payment, PaymentEventType.REFUND_PROCESSING,
-                    paymentStatus, paymentStatus, PaymentEventSource.REFUND, null);
-        }
-
-        return refund;
     }
 
     private void validateInputs(String paymentReference, String idempotencyKey) {
