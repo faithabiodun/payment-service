@@ -81,6 +81,26 @@ class RefundWebhookServiceTests {
         verifyNoInteractions(paystack, states);
     }
 
+    @Test
+    void resolvesAmbiguousWebhookOnlyWhenOneKnownProviderRefundMatches() throws Exception {
+        Refund processed = refund("REF-5", "PAY-4", "9001");
+        Refund stillProcessing = refund("REF-6", "PAY-4", "9002");
+        when(refunds.findNonTerminalByPaymentReference("PAY-4"))
+                .thenReturn(List.of(processed, stillProcessing));
+        PaystackRefundData currentProcessed = new PaystackRefundData(
+                BigInteger.valueOf(9001), "processed", 250_000L, "NGN", null, Instant.now());
+        PaystackRefundData currentProcessing = new PaystackRefundData(
+                BigInteger.valueOf(9002), "processing", 250_000L, "NGN", null, null);
+        when(paystack.fetchRefund("9001")).thenReturn(currentProcessed);
+        when(paystack.fetchRefund("9002")).thenReturn(currentProcessing);
+
+        webhooks.process("refund.processed", event("processed", "250000", null, "PAY-4"), "{}");
+
+        verify(states).applyProviderState(
+                "REF-5", currentProcessed, PaymentEventSource.WEBHOOK, "{}");
+        verifyNoMoreInteractions(states);
+    }
+
     private PaystackRefundWebhookData event(
             String status,
             String amount,
