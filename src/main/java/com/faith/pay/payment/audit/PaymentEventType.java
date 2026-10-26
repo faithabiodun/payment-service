@@ -16,7 +16,11 @@ public enum PaymentEventType {
 
     REFUND_REQUESTED,
 
+    REFUND_SUBMITTED,
+
     REFUND_PROCESSING,
+
+    REFUND_NEEDS_ATTENTION,
 
     REFUND_SUCCEEDED,
 

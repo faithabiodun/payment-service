@@ -1,177 +1,62 @@
 package com.faith.pay.refund;
 
-import com.faith.pay.error.*;
-import org.springframework.http.HttpStatus;
-
+import com.faith.pay.error.ProviderCommunicationException;
 import com.faith.pay.payment.Payment;
 import com.faith.pay.payment.PaymentRepository;
-import com.faith.pay.payment.PaymentStatus;
 import com.faith.pay.provider.PaystackClient;
 import com.faith.pay.provider.dto.PaystackRefundData;
-
+import com.faith.pay.refund.dto.RefundRequest;
+import com.faith.pay.refund.dto.RefundResponse;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-
-import java.util.UUID;
 
 @Service
 public class RefundService {
 
-    private final RefundRepository refundRepository;
-    private final PaymentRepository paymentRepository;
-    private final PaystackClient paystackClient;
+    private final RefundCommandService commands;
+    private final RefundRepository refunds;
+    private final PaymentRepository payments;
+    private final PaystackClient paystack;
 
     public RefundService(
-            RefundRepository refundRepository,
-            PaymentRepository paymentRepository,
-            PaystackClient paystackClient
+            RefundCommandService commands,
+            RefundRepository refunds,
+            PaymentRepository payments,
+            PaystackClient paystack
     ) {
-        this.refundRepository = refundRepository;
-        this.paymentRepository = paymentRepository;
-        this.paystackClient = paystackClient;
+        this.commands = commands;
+        this.refunds = refunds;
+        this.payments = payments;
+        this.paystack = paystack;
     }
 
-    @Transactional
-    public Refund refund(
-            String paymentReference,
-            long amountKobo,
-            String reason,
-            String idempotencyKey
-    ) {
-        if (idempotencyKey == null
-                || idempotencyKey.isBlank()) {
+    /** Reserves locally, then calls Paystack after the reservation transaction commits. */
+    public RefundResponse refund(String paymentReference, RefundRequest request, String idempotencyKey) {
+        RefundReservation reservation = commands.reserve(paymentReference, request, idempotencyKey);
 
-            throw new AppException(ErrorCode.BAD_REQUEST, HttpStatus.BAD_REQUEST,
-                    "Idempotency-Key is required"
+        if (!reservation.newlyCreated()) {
+            return get(reservation.refundReference());
+        }
+
+        Payment payment = payments.findByReference(paymentReference)
+                .orElseThrow();
+
+        try {
+            PaystackRefundData provider = paystack.createRefund(
+                    payment.getReference(),
+                    reservation.amountKobo(),
+                    reservation.refundReference()
             );
-        }
-
-        if (paymentReference == null
-                || paymentReference.isBlank()) {
-
-            throw new AppException(ErrorCode.BAD_REQUEST, HttpStatus.BAD_REQUEST,
-                    "Payment reference is required"
-            );
-        }
-
-        if (amountKobo <= 0) {
-            throw new AppException(ErrorCode.BAD_REQUEST, HttpStatus.BAD_REQUEST,
-                    "Refund amount must be positive"
-            );
-        }
-
-        Refund existing = refundRepository
-                .findByIdempotencyKey(idempotencyKey)
-                .orElse(null);
-
-        if (existing != null) {
-            validateReplay(
-                    existing,
-                    paymentReference,
-                    amountKobo,
-                    reason
-            );
-
-            return existing;
-        }
-
-        Payment payment = paymentRepository
-                .findByReferenceForUpdate(paymentReference)
-                .orElseThrow(() -> new PaymentNotFoundException(paymentReference));
-
-        // Recheck after taking the payment lock to serialize concurrent refunds.
-        existing = refundRepository
-                .findByIdempotencyKey(idempotencyKey)
-                .orElse(null);
-
-        if (existing != null) {
-            validateReplay(
-                    existing,
-                    paymentReference,
-                    amountKobo,
-                    reason
-            );
-
-            return existing;
-        }
-
-        if (payment.getStatus() != PaymentStatus.SUCCESS
-                && payment.getStatus() != PaymentStatus.PARTIALLY_REFUNDED) {
-
-            throw new AppException(ErrorCode.REFUND_NOT_ALLOWED, HttpStatus.CONFLICT,
-                    "Only successful payments can be refunded"
-            );
-        }
-
-        long reserved = refundRepository
-                .totalReservedRefundAmount(payment.getId());
-
-        if (amountKobo > payment.getAmountKobo() - reserved) {
-            throw new AppException(ErrorCode.REFUND_EXCEEDS_REMAINING_AMOUNT, HttpStatus.CONFLICT,
-                    "Refund amount exceeds the remaining refundable amount"
-            );
-        }
-
-        Refund refund = new Refund(
-                payment,
-                newReference(),
-                amountKobo,
-                reason,
-                idempotencyKey
-        );
-
-        refundRepository.saveAndFlush(refund);
-
-        PaystackRefundData providerRefund = paystackClient.refund(
-                payment.getReference(),
-                amountKobo,
-                reason
-        );
-
-        String providerStatus = providerRefund.status();
-
-        if (providerStatus == null
-                || providerStatus.isBlank()) {
-
-            throw new AppException(ErrorCode.PROVIDER_RESPONSE_INVALID, HttpStatus.BAD_GATEWAY,
-                    "Paystack returned a refund without a status"
-            );
-        }
-
-        refund.markProcessing(
-                providerRefund.id().toString()
-        );
-
-        if ("processed".equalsIgnoreCase(providerStatus)
-                || "success".equalsIgnoreCase(providerStatus)) {
-
-            refund.markSuccess();
-            payment.addRefundedKobo(amountKobo);
-
-        } else if ("failed".equalsIgnoreCase(providerStatus)) {
-            refund.markFailed();
-        }
-
-        return refund;
-    }
-
-    private void validateReplay(
-            Refund refund,
-            String paymentReference,
-            long amountKobo,
-            String reason
-    ) {
-        if (!refund.getPayment().getReference().equals(paymentReference)
-                || refund.getAmountKobo() != amountKobo
-                || !java.util.Objects.equals(refund.getReason(), reason)) {
-
-            throw new IdempotencyKeyReuseException();
+            return RefundResponse.from(commands.applyProviderResult(
+                    reservation.refundReference(), provider));
+        } catch (ProviderCommunicationException failure) {
+            // Keep the committed reservation so reconciliation can recover an uncertain result.
+            throw failure;
         }
     }
 
-    private String newReference() {
-        return "REF-" + UUID.randomUUID()
-                .toString()
-                .replace("-", "");
+    private RefundResponse get(String reference) {
+        return refunds.findByReference(reference)
+                .map(RefundResponse::from)
+                .orElseThrow();
     }
 }

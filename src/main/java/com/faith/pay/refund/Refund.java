@@ -30,6 +30,9 @@ public class Refund {
     @Column(name = "provider_refund_id")
     private String providerRefundId;
 
+    @Column(name = "provider_status")
+    private String providerStatus;
+
     @Column(
             name = "amount_kobo",
             nullable = false
@@ -51,6 +54,9 @@ public class Refund {
 
     @Column(name = "created_at")
     private Instant createdAt;
+
+    @Column(name = "updated_at")
+    private Instant updatedAt;
 
     @Column(name = "completed_at")
     private Instant completedAt;
@@ -75,25 +81,41 @@ public class Refund {
 
     @PrePersist
     void insert() {
-        createdAt = Instant.now();
+        Instant now = Instant.now();
+        createdAt = now;
+        updatedAt = now;
+    }
+
+    @PreUpdate
+    void update() {
+        updatedAt = Instant.now();
     }
 
     public void markProcessing(
-            String providerRefundId
+            String providerRefundId,
+            String providerStatus
     ) {
         this.providerRefundId =
                 providerRefundId;
 
+        this.providerStatus = providerStatus;
         status =
                 RefundStatus.PROCESSING;
     }
 
-    public void markSuccess() {
+    public void markNeedsAttention(String providerStatus) {
+        this.providerStatus = providerStatus;
+        status = RefundStatus.NEEDS_ATTENTION;
+    }
+
+    public void markSuccessful(String providerStatus) {
+        this.providerStatus = providerStatus;
         status = RefundStatus.SUCCESS;
         completedAt = Instant.now();
     }
 
-    public void markFailed() {
+    public void markFailed(String providerStatus) {
+        this.providerStatus = providerStatus;
         status = RefundStatus.FAILED;
         completedAt = Instant.now();
     }
@@ -124,5 +146,25 @@ public class Refund {
 
     public String getProviderRefundId() {
         return providerRefundId;
+    }
+
+    public String getProviderStatus() {
+        return providerStatus;
+    }
+
+    public String getIdempotencyKey() {
+        return idempotencyKey;
+    }
+
+    public Instant getCreatedAt() {
+        return createdAt;
+    }
+
+    public Instant getUpdatedAt() {
+        return updatedAt;
+    }
+
+    public Instant getCompletedAt() {
+        return completedAt;
     }
 }

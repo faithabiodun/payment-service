@@ -153,7 +153,17 @@ public class Payment {
 
     public void addRefundedKobo(long amount) {
 
-        refundedKobo += amount;
+        if (amount <= 0) {
+            throw new IllegalArgumentException("Refund amount must be positive");
+        }
+
+        long next = refundedKobo + amount;
+
+        if (next > amountKobo) {
+            throw new IllegalStateException("Refund would exceed payment amount");
+        }
+
+        refundedKobo = next;
 
         if (refundedKobo == amountKobo) {
             markRefunded();

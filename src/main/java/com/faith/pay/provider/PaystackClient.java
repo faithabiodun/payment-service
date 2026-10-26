@@ -129,17 +129,17 @@ public class PaystackClient {
         }
     }
 
-    public PaystackRefundData refund(
+    public PaystackRefundData createRefund(
             String transactionReference,
             long amountKobo,
-            String reason
+            String localRefundReference
     ) {
 
         PaystackRefundRequest request =
                 new PaystackRefundRequest(
                         transactionReference,
                         amountKobo,
-                        reason
+                        "Local refund: " + localRefundReference
                 );
 
 
@@ -160,7 +160,7 @@ public class PaystackClient {
                         )
                         .block(Duration.ofSeconds(10));
         } catch (RuntimeException failure) {
-            throw new ProviderCommunicationException("Paystack refund request failed", failure);
+            throw new ProviderCommunicationException("Could not submit refund to Paystack", failure);
         }
 
 
@@ -168,10 +168,32 @@ public class PaystackClient {
                 || !response.status()
                 || response.data() == null) {
 
-            throw new ProviderCommunicationException("Refund request failed");
+            throw new ProviderCommunicationException("Paystack rejected refund request", null);
         }
 
 
         return response.data();
+    }
+
+    public PaystackRefundData fetchRefund(String providerRefundId) {
+        try {
+            PaystackResponse<PaystackRefundData> response = webClient
+                    .get()
+                    .uri("/refund/{id}", providerRefundId)
+                    .retrieve()
+                    .bodyToMono(new ParameterizedTypeReference<
+                            PaystackResponse<PaystackRefundData>>() { })
+                    .block(Duration.ofSeconds(10));
+
+            if (response == null || !response.status() || response.data() == null) {
+                throw new ProviderCommunicationException("Could not fetch refund from Paystack", null);
+            }
+
+            return response.data();
+        } catch (ProviderCommunicationException failure) {
+            throw failure;
+        } catch (Exception failure) {
+            throw new ProviderCommunicationException("Could not fetch refund from Paystack", failure);
+        }
     }
 }

@@ -1,37 +1,43 @@
 package com.faith.pay.refund;
 
-import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Query;
+import jakarta.persistence.LockModeType;
+import org.springframework.data.jpa.repository.*;
 import org.springframework.data.repository.query.Param;
 
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
-public interface RefundRepository
-        extends JpaRepository<Refund, Long> {
+public interface RefundRepository extends JpaRepository<Refund, Long> {
 
-    Optional<Refund> findByIdempotencyKey(
-            String idempotencyKey
-    );
+    Optional<Refund> findByIdempotencyKey(String idempotencyKey);
 
     @Query("""
-            select coalesce(sum(r.amountKobo), 0)
+            select r
             from Refund r
-            where r.payment.id = :paymentId
-              and r.status in (
-                  com.faith.pay.refund.RefundStatus.PENDING,
-                  com.faith.pay.refund.RefundStatus.PROCESSING,
-                  com.faith.pay.refund.RefundStatus.SUCCESS
-              )
+            join fetch r.payment
+            where r.reference = :reference
             """)
-    long totalReservedRefundAmount(
-            @Param("paymentId")
-            Long paymentId
-    );
+    Optional<Refund> findByReference(@Param("reference") String reference);
 
+    Optional<Refund> findByProviderRefundId(String providerRefundId);
 
-    List<Refund> findByStatusIn(
-            Collection<RefundStatus> statuses
-    );
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+            select r
+            from Refund r
+            join fetch r.payment
+            where r.reference = :reference
+            """)
+    Optional<Refund> findByReferenceForUpdate(@Param("reference") String reference);
+
+    @Query(value = """
+            SELECT COALESCE(SUM(amount_kobo), 0)
+            FROM refunds
+            WHERE payment_id = :paymentId
+              AND status IN ('PENDING', 'PROCESSING', 'NEEDS_ATTENTION', 'SUCCESS')
+            """, nativeQuery = true)
+    long totalReservedRefundAmount(@Param("paymentId") Long paymentId);
+
+    List<Refund> findByStatusIn(Collection<RefundStatus> statuses);
 }
