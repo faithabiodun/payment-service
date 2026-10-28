@@ -1,7 +1,7 @@
 {
   "info": {
-    "name": "Payment Service - Test Payment Flow",
-    "description": "Create a test order, then initialize its payment.",
+    "name": "Payment Service - API Testing",
+    "description": "Exercise payment initialization, verification, signed webhook handling, refund initiation, and payment status.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -22,6 +22,16 @@
     },
     {
       "key": "amountKobo",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "refundReference",
+      "value": "REF-YOUR-REFERENCE",
+      "type": "string"
+    },
+    {
+      "key": "refundStatus",
       "value": "",
       "type": "string"
     }
@@ -121,6 +131,42 @@
               "if (result.providerStatus) pm.collectionVariables.set('providerStatus', result.providerStatus);",
               "if (result.payment && result.payment.status) pm.collectionVariables.set('paymentStatus', result.payment.status);",
               "if (result.settlementApplied !== undefined) pm.collectionVariables.set('settlementApplied', String(result.settlementApplied));"
+            ]
+          }
+        }
+      ],
+      "response": []
+    },
+    {
+      "name": "Initiate Partial Refund",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Idempotency-Key", "value": "{{$guid}}" },
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Accept", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"amountKobo\": 125000,\n  \"reason\": \"sample partial refund\"\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/payments/{{reference}}/refunds",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "v1", "payments", "{{reference}}", "refunds"]
+        },
+        "description": "Run only after a real Paystack test checkout has succeeded and local payment status is SUCCESS or PARTIALLY_REFUNDED. Synthetic webhook payments do not exist at Paystack and cannot be refunded there."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const refund = pm.response.json();",
+              "if (refund.reference) pm.collectionVariables.set('refundReference', refund.reference);",
+              "if (refund.status) pm.collectionVariables.set('refundStatus', refund.status);"
             ]
           }
         }
