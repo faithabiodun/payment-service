@@ -53,37 +53,6 @@ public class PaymentSettlementService {
 
 
         /*
-         * 2. If success was already applied, this
-         *    operation is idempotent.
-         *
-         * IMPORTANT:
-         * Do not turn REFUNDED back into SUCCESS.
-         */
-        if (payment
-                .getStatus()
-                .hasSuccessfulCharge()) {
-
-            return SettlementResult
-                    .ALREADY_APPLIED;
-        }
-
-
-        /*
-         * 3. We only accept success from states
-         *    where success is logically valid.
-         */
-        if (!payment
-                .getStatus()
-                .canBecomeSuccessful()) {
-
-            throw new UnexpectedPaymentStateException(
-                    payment.getReference(),
-                    payment.getStatus().name()
-            );
-        }
-
-
-        /*
          * 4. Provider must actually say that the
          *    financial transaction succeeded.
          */
@@ -168,6 +137,22 @@ public class PaymentSettlementService {
                     "Successful provider response "
                             + "did not contain transaction id"
             );
+        }
+
+        /* Validate provider truth before treating a replay as idempotent. */
+        if (payment.getStatus().hasSuccessfulCharge()) {
+            if (payment.getProviderTransactionId() != null
+                    && !payment.getProviderTransactionId().equals(provider.id().toString())) {
+                throw new AppException(ErrorCode.PROVIDER_RESPONSE_INVALID,
+                        org.springframework.http.HttpStatus.BAD_GATEWAY,
+                        "Provider transaction id differs from the settled payment");
+            }
+            return SettlementResult.ALREADY_APPLIED;
+        }
+
+        /* Only open payments may be newly settled as successful. */
+        if (!payment.getStatus().canBecomeSuccessful()) {
+            throw new UnexpectedPaymentStateException(payment.getReference(), payment.getStatus().name());
         }
 
 

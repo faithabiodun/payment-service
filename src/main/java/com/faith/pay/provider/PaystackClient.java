@@ -11,6 +11,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
 
 import java.time.Duration;
+import java.util.List;
 
 @Component
 public class PaystackClient {
@@ -203,6 +204,24 @@ public class PaystackClient {
             throw failure;
         } catch (Exception failure) {
             throw new ProviderCommunicationException("Could not fetch refund from Paystack", failure);
+        }
+    }
+
+    public List<PaystackRefundData> listRefundsForTransaction(String providerTransactionId) {
+        try {
+            PaystackResponse<List<PaystackRefundData>> response = webClient.get()
+                    .uri(uri -> uri.path("/refund").queryParam("transaction", providerTransactionId).build())
+                    .retrieve()
+                    .bodyToMono(new ParameterizedTypeReference<PaystackResponse<List<PaystackRefundData>>>() { })
+                    .block(Duration.ofSeconds(10));
+            if (response == null || !response.status() || response.data() == null) {
+                throw new ProviderCommunicationException("Could not list refunds from Paystack", null);
+            }
+            return response.data();
+        } catch (ProviderCommunicationException failure) {
+            throw failure;
+        } catch (Exception failure) {
+            throw new ProviderCommunicationException("Could not list refunds from Paystack", failure);
         }
     }
 }

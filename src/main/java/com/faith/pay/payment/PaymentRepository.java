@@ -4,6 +4,7 @@ import jakarta.persistence.LockModeType;
 
 import org.springframework.data.jpa.repository.*;
 import org.springframework.data.repository.query.Param;
+import org.springframework.data.domain.Pageable;
 
 import java.time.Instant;
 import java.util.*;
@@ -25,6 +26,8 @@ public interface PaymentRepository
     Optional<Payment> findByIdempotencyKey(
             String idempotencyKey
     );
+
+    List<Payment> findByManualReviewRequiredTrue();
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""
@@ -63,4 +66,13 @@ public interface PaymentRepository
             @Param("cutoff")
             Instant cutoff
     );
+
+    @Query("""
+            select p from Payment p join fetch p.order
+            where p.status in (com.faith.pay.payment.PaymentStatus.PENDING,
+                               com.faith.pay.payment.PaymentStatus.PROCESSING)
+              and p.updatedAt < :cutoff and p.manualReviewRequired = false
+            order by p.updatedAt asc
+            """)
+    List<Payment> findReconciliationCandidates(@Param("cutoff") Instant cutoff, Pageable pageable);
 }

@@ -3,6 +3,8 @@ package com.faith.pay.refund;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.*;
 import org.springframework.data.repository.query.Param;
+import org.springframework.data.domain.Pageable;
+import java.time.Instant;
 
 import java.util.Collection;
 import java.util.List;
@@ -11,6 +13,8 @@ import java.util.Optional;
 public interface RefundRepository extends JpaRepository<Refund, Long> {
 
     Optional<Refund> findByIdempotencyKey(String idempotencyKey);
+
+    List<Refund> findByManualReviewRequiredTrue();
 
     @Query("""
             select r
@@ -55,4 +59,14 @@ public interface RefundRepository extends JpaRepository<Refund, Long> {
     List<Refund> findNonTerminalByPaymentReference(
             @Param("paymentReference") String paymentReference
     );
+
+    @Query("""
+            select r from Refund r join fetch r.payment p
+            where r.status in (com.faith.pay.refund.RefundStatus.PENDING,
+                               com.faith.pay.refund.RefundStatus.PROCESSING,
+                               com.faith.pay.refund.RefundStatus.NEEDS_ATTENTION)
+              and r.updatedAt < :cutoff and r.manualReviewRequired = false
+            order by r.updatedAt asc
+            """)
+    List<Refund> findReconciliationCandidates(@Param("cutoff") Instant cutoff, Pageable pageable);
 }

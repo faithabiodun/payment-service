@@ -19,6 +19,13 @@ public record PaystackRefundData(
         Instant expectedAt,
 
         @JsonProperty("refunded_at")
-        Instant refundedAt
+        Instant refundedAt,
+
+        @JsonProperty("merchant_note")
+        String merchantNote
 ) {
+    public PaystackRefundData(BigInteger id, String status, long amount, String currency,
+                              Instant expectedAt, Instant refundedAt) {
+        this(id, status, amount, currency, expectedAt, refundedAt, null);
+    }
 }

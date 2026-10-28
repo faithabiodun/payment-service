@@ -5,6 +5,7 @@ public enum PaymentStatus {
     PROCESSING,
     SUCCESS,
     FAILED,
+    ABANDONED,
     PARTIALLY_REFUNDED,
     REFUNDED;
 
@@ -31,5 +32,9 @@ public enum PaymentStatus {
 
         return this == PENDING
                 || this == PROCESSING;
+    }
+
+    public boolean isOpen() {
+        return this == PENDING || this == PROCESSING;
     }
 }

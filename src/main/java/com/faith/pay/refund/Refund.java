@@ -68,6 +68,13 @@ public class Refund {
     @Column(name = "completed_at")
     private Instant completedAt;
 
+    @Column(name = "reconciliation_attempts", nullable = false)
+    private int reconciliationAttempts;
+    @Column(name = "last_reconciled_at")
+    private Instant lastReconciledAt;
+    @Column(name = "manual_review_required", nullable = false)
+    private boolean manualReviewRequired;
+
     protected Refund() {
     }
 
@@ -132,6 +139,9 @@ public class Refund {
         this.providerStatus = providerStatus;
     }
 
+    public void recordReconciliationAttempt() { reconciliationAttempts++; lastReconciledAt = Instant.now(); }
+    public void requireManualReview() { manualReviewRequired = true; }
+
     public Long getId() {
         return id;
     }
@@ -183,4 +193,7 @@ public class Refund {
     public Instant getCompletedAt() {
         return completedAt;
     }
+    public int getReconciliationAttempts() { return reconciliationAttempts; }
+    public Instant getLastReconciledAt() { return lastReconciledAt; }
+    public boolean isManualReviewRequired() { return manualReviewRequired; }
 }

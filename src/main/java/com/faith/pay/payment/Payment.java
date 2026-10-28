@@ -82,6 +82,15 @@ public class Payment {
     @Column(name = "updated_at")
     private Instant updatedAt;
 
+    @Column(name = "reconciliation_attempts", nullable = false)
+    private int reconciliationAttempts;
+
+    @Column(name = "last_reconciled_at")
+    private Instant lastReconciledAt;
+
+    @Column(name = "manual_review_required", nullable = false)
+    private boolean manualReviewRequired;
+
     @Version
     private long version;
 
@@ -150,6 +159,23 @@ public class Payment {
         status =
                 PaymentStatus.REFUNDED;
     }
+
+    public void markFailed() {
+        if (!status.isOpen()) throw new IllegalStateException("Only open payments can be marked failed");
+        status = PaymentStatus.FAILED;
+    }
+
+    public void markAbandoned() {
+        if (!status.isOpen()) throw new IllegalStateException("Only open payments can be marked abandoned");
+        status = PaymentStatus.ABANDONED;
+    }
+
+    public void recordReconciliationAttempt() {
+        reconciliationAttempts++;
+        lastReconciledAt = Instant.now();
+    }
+
+    public void requireManualReview() { manualReviewRequired = true; }
 
     public void addRefundedKobo(long amount) {
 
@@ -250,4 +276,8 @@ public class Payment {
     public Instant paidAt() {
         return paidAt;
     }
+
+    public int getReconciliationAttempts() { return reconciliationAttempts; }
+    public Instant getLastReconciledAt() { return lastReconciledAt; }
+    public boolean isManualReviewRequired() { return manualReviewRequired; }
 }
