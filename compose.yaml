@@ -1,0 +1,38 @@
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: payment_service
+      POSTGRES_USER: ${DB_USERNAME:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in your environment}
+    ports:
+      - "5433:5432"
+    volumes:
+      - payment-service-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-postgres} -d payment_service"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  app:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DB_URL: jdbc:postgresql://db:5432/payment_service
+      DB_USERNAME: ${DB_USERNAME:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in your environment}
+      PAYSTACK_SECRET_KEY: ${PAYSTACK_SECRET_KEY:?Set PAYSTACK_SECRET_KEY to a Paystack test secret}
+      PAYSTACK_CALLBACK_URL: ${PAYSTACK_CALLBACK_URL:-http://localhost:8080/api/v1/payments/callback}
+      RECONCILIATION_PAYMENT_STALE_AFTER: ${RECONCILIATION_PAYMENT_STALE_AFTER:-PT10M}
+      RECONCILIATION_ABANDON_AFTER: ${RECONCILIATION_ABANDON_AFTER:-PT24H}
+      RECONCILIATION_REFUND_STALE_AFTER: ${RECONCILIATION_REFUND_STALE_AFTER:-PT10M}
+      RECONCILIATION_MAX_ATTEMPTS: ${RECONCILIATION_MAX_ATTEMPTS:-5}
+      RECONCILIATION_BATCH_SIZE: ${RECONCILIATION_BATCH_SIZE:-100}
+    ports:
+      - "8080:8080"
+
+volumes:
+  payment-service-postgres:

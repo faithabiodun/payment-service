@@ -1,79 +1,55 @@
 # Payment Service
 
-A Spring Boot application for initializing and verifying Paystack payments, processing signed webhooks, and recording payment events in PostgreSQL. It also includes a refund service and a scheduled job that verifies stale payments.
+Java 21 and Spring Boot 4.1.1 payment API for Paystack, backed by PostgreSQL. It supports signed payment/refund webhooks, idempotent payment initialization and refunds, payment settlement, refund accounting, and scheduled payment/refund reconciliation.
 
-Amounts are expressed in **kobo**: `500000` represents NGN 5,000.
+Amounts are in **kobo**: `500000` means NGN 5,000.
 
-## Stack
+## Run with Docker Compose
 
-- Java 17 or newer
-- Spring Boot 4.1.1, Spring MVC, and WebClient
-- Spring Data JPA and PostgreSQL
-- Flyway database migrations
-- Maven
-- Testcontainers for database tests
+Docker Compose starts PostgreSQL and the application. Flyway applies the database migrations during application startup.
 
-## Run locally
-
-Create an empty PostgreSQL database named `payment_service`. Flyway creates the tables when the application starts; Hibernate validates the resulting schema.
-
-Set the following environment variables in your terminal or IntelliJ run configuration:
-
-| Variable | Required | Default / purpose |
-| --- | --- | --- |
-| `DB_URL` | No | `jdbc:postgresql://localhost:5432/payment_service` |
-| `DB_USERNAME` | No | `postgres` |
-| `DB_PASSWORD` | Yes | Your PostgreSQL password |
-| `PAYSTACK_SECRET_KEY` | Yes | Your Paystack secret key; use a test key for development |
-| `PAYSTACK_CALLBACK_URL` | No | `http://localhost:8080/api/v1/payments/callback` |
-
-PowerShell example:
+PowerShell:
 
 ```powershell
-$env:DB_PASSWORD = "your-local-database-password"
-$env:PAYSTACK_SECRET_KEY = "your-paystack-test-secret-key"
-mvn spring-boot:run
+$env:DB_PASSWORD = "local-db-password"
+$env:PAYSTACK_SECRET_KEY = "sk_test_your_paystack_test_secret"
+docker compose up --build
 ```
 
-On macOS or Linux:
+Bash:
 
 ```bash
-export DB_PASSWORD="your-local-database-password"
-export PAYSTACK_SECRET_KEY="your-paystack-test-secret-key"
-./mvnw spring-boot:run
+export DB_PASSWORD="local-db-password"
+export PAYSTACK_SECRET_KEY="sk_test_your_paystack_test_secret"
+docker compose up --build
 ```
 
-The application starts on `http://localhost:8080`. Health is available at `/actuator/health`.
+The API is available at `http://localhost:8080`; health is at `/actuator/health`. PostgreSQL is available to host tools on port `5433`; inside Compose the app connects to `db:5432`. Data is kept in the `payment-service-postgres` volume. The application container runs as a non-root user. Do not use a live Paystack secret for local development.
 
-A `.env` file is ignored by Git, but Spring Boot does not automatically load it with the current configuration. Supply the variables through the process environment or your IDE. Keep credentials out of source control.
+To run without Compose, provide `DB_URL` (default `jdbc:postgresql://localhost:5432/payment_service`), `DB_USERNAME` (default `postgres`), `DB_PASSWORD`, and `PAYSTACK_SECRET_KEY`, then run `mvn spring-boot:run` or `bash ./mvnw spring-boot:run`.
 
 ## API
 
 | Method | Path | Purpose |
 | --- | --- | --- |
 | POST | `/api/v1/test-orders` | Create a development order |
-| POST | `/api/v1/payments/initialize` | Initialize a Paystack checkout |
-| POST | `/api/v1/payments/{reference}/verify` | Verify a payment with Paystack |
-| GET | `/api/v1/payments/{reference}` | Read the stored payment status |
-| GET | `/api/v1/payments/callback?reference=...` | Receive the checkout redirect |
-| POST | `/webhooks/paystack` | Receive a signed Paystack webhook |
+| POST | `/api/v1/payments/initialize` | Reserve and initialize Paystack checkout |
+| POST | `/api/v1/payments/{reference}/verify` | Verify payment with Paystack |
+| GET | `/api/v1/payments/{reference}` | Read payment state |
+| POST | `/api/v1/payments/{paymentReference}/refunds` | Create an idempotent refund request |
+| GET | `/api/v1/payments/callback?reference=...` | Handle checkout redirect (does not settle) |
+| POST | `/webhooks/paystack` | Receive signed Paystack webhooks |
 
-Create a test order:
+Create an order:
 
 ```json
 {
-  "email": "faith@example.com",
+  "email": "sam@example.test",
   "amountKobo": 500000
 }
 ```
 
-Initialize its payment using the returned order ID:
-
-```http
-POST /api/v1/payments/initialize
-Content-Type: application/json
-Idempotency-Key: a-unique-key-for-this-request
-```
+Initialize using the returned order ID and a unique `Idempotency-Key`:
 
 ```json
 {
@@ -81,116 +57,51 @@ Idempotency-Key: a-unique-key-for-this-request
 }
 ```
 
-The amount comes from the stored order. The response includes the payment `reference`, `authorizationUrl`, and `accessCode`. Open the authorization URL to complete checkout, then verify the reference or allow a signed webhook to confirm payment.
+The amount comes from the stored order. Complete checkout with the returned `authorizationUrl`, then wait for a Paystack webhook or call the verification endpoint. A callback redirect alone never marks a payment successful.
 
-The callback redirect alone does not mark a payment successful. Completion validates the provider amount and currency, marks the order paid, and writes a payment event. Repeated success notifications do not apply completion twice.
+For refunds, the payment must already be `SUCCESS` or `PARTIALLY_REFUNDED`. Send a positive `amountKobo` and reason, plus a unique `Idempotency-Key`. To refund the remaining amount, omit `amountKobo` or send `null`. A real Paystack test transaction is required for provider-backed refund testing.
 
-## Postman
+## Postman and sample data
 
-Import [test-orders.postman_collection.json](test-orders.postman_collection.json) and set the collection variable `baseUrl` if your server runs elsewhere.
+Import [test-orders.postman_collection.json](test-orders.postman_collection.json). It includes create order, initialize, verify, signed local webhook simulation, partial refund, callback, and payment status requests. Set the `baseUrl` collection variable if needed. The webhook simulation also needs a Postman environment variable named `paystackSecretKey` matching `PAYSTACK_SECRET_KEY`.
 
-For a Paystack test checkout:
+Copyable request bodies, a sample checkout sequence, reconciliation SQL, and safe local testing notes are in [docs/testing-samples.md](docs/testing-samples.md).
 
-1. Run **Create Test Order**. Its response saves `orderId`.
-2. Run **Initialize Payment**. Its response saves `reference` and `amountKobo`.
-3. Complete checkout at the returned `authorizationUrl`.
-4. Run **Verify Payment**, then **Get Payment Status**.
-
-Use **Simulate Paystack Success Webhook** to exercise webhook handling locally. Set the Postman environment variable `paystackSecretKey` to the application's test secret and select that environment. The script signs the generated body using HMAC-SHA512.
-
-Simulation creates a synthetic success event; it does not complete a transaction at Paystack. Use an actual test checkout when testing provider verification or refunds. For provider-delivered webhooks, configure a publicly reachable webhook URL ending in `/webhooks/paystack` in your Paystack dashboard.
+The simulated success webhook only changes local state; it does not create a Paystack transaction. It is useful for webhook handling and settlement checks, but cannot be verified or refunded by Paystack.
 
 ## Reconciliation
 
-`ReconciliationJob` waits five minutes after each run finishes before starting again. It selects payments in `PROCESSING` whose `updated_at` is more than ten minutes old and calls the payment verification service for each one.
+Every five minutes, separate payment and refund jobs select bounded batches of stale records. Paystack requests run outside database transactions. Successful payments use the shared settlement service; refund results use the shared refund state service. ShedLock with PostgreSQL database time prevents multiple application instances from running the same job concurrently.
 
-To test recovery from a missed webhook:
+Default timings are configurable through environment variables:
 
-1. Initialize and complete a Paystack test checkout.
-2. Leave the local payment in `PROCESSING` by preventing webhook delivery and avoiding manual verification.
-3. Wait until it is stale, then allow the next scheduled run to verify it.
-4. Check for payment status `SUCCESS` and a `PAYMENT_SUCCEEDED` event with source `VERIFICATION`.
-
-To shorten the wait for one payment in a development database:
-
-```sql
-UPDATE payments
-SET updated_at = now() - interval '11 minutes'
-WHERE reference = 'YOUR_PAYMENT_REFERENCE'
-  AND status = 'PROCESSING';
-```
-
-The next scheduled run can still take up to five minutes. Inspect the result with:
-
-```sql
-SELECT reference, status, updated_at
-FROM payments
-WHERE reference = 'YOUR_PAYMENT_REFERENCE';
-
-SELECT e.event_type, e.from_status, e.to_status, e.source, e.created_at
-FROM payment_events e
-JOIN payments p ON p.id = e.payment_id
-WHERE p.reference = 'YOUR_PAYMENT_REFERENCE'
-ORDER BY e.created_at;
-```
-
-## Refunds
-
-`RefundService.refund(paymentReference, amountKobo, reason, idempotencyKey)` initiates a refund for a successful or partially refunded payment. It locks the payment, checks reserved refund amounts, validates idempotent replays, and sends the refund request to Paystack.
-
-Pending, processing, and successful refunds count toward the reserved amount. The payment's refunded total changes when the initial provider response confirms a processed refund. The same idempotency key and request return the existing refund.
-
-There is currently no refund REST controller, so the Postman collection cannot call this service. Refund completion webhooks and refund reconciliation are also not implemented: a refund returned as processing will remain in that local state until completion handling is added. The scheduled reconciliation job checks payments only.
-
-## Error responses
-
-API errors include `timestamp`, `status`, `error`, and `message`.
-
-| Error | HTTP status |
+| Variable | Default |
 | --- | --- |
-| `ORDER_NOT_FOUND` | 404 |
-| `ORDER_ALREADY_PAID` | 409 |
-| `PAYMENT_NOT_FOUND` | 404 |
-| `PAYMENT_ALREADY_IN_PROGRESS` | 409 |
-| `IDEMPOTENCY_KEY_REUSED` | 409 |
-| `PAYMENT_NOT_SUCCESSFUL` | 409 |
-| `PAYMENT_AMOUNT_MISMATCH` | 422 |
-| `PAYMENT_CURRENCY_MISMATCH` | 422 |
-| `PROVIDER_UNAVAILABLE` | 503 |
-| `PROVIDER_RESPONSE_INVALID` | 502 |
-| `REFUND_EXCEEDS_REMAINING_AMOUNT` | 409 |
-| `REFUND_NOT_ALLOWED` | 409 |
-| `INVALID_WEBHOOK_SIGNATURE` | 401 |
-| `INVALID_WEBHOOK_PAYLOAD` | 400 |
-| `BAD_REQUEST` | 400 (or the framework's request error status) |
-| `INTERNAL_ERROR` | 500 |
+| `RECONCILIATION_PAYMENT_STALE_AFTER` | `PT10M` |
+| `RECONCILIATION_ABANDON_AFTER` | `PT24H` |
+| `RECONCILIATION_REFUND_STALE_AFTER` | `PT10M` |
+| `RECONCILIATION_MAX_ATTEMPTS` | `5` |
+| `RECONCILIATION_BATCH_SIZE` | `100` |
 
-The `error` field contains a stable `ErrorCode` name. Domain failures extend
-`AppException` and supply their code, HTTP status, and message. Unexpected failures
-are logged and return a generic message. Invalid or missing webhook signatures
-return the same JSON error format with status 401.
+Reconciliation history is operational data in `reconciliation_attempts`; financial events remain in `payment_events`. Unknown or contradictory provider states are sent for manual review. Refund reservations without a provider refund ID are discovered by the local merchant note; they are never blindly resubmitted.
 
-```json
-{
-  "timestamp": "2026-10-13T10:00:00Z",
-  "status": 404,
-  "error": "ORDER_NOT_FOUND",
-  "message": "Order 42 was not found"
-}
-```
+## CI/CD
+
+`.github/workflows/ci-cd.yml` runs the complete Maven verification suite on pull requests and pushes to `main`, including PostgreSQL Testcontainers and WireMock tests, then builds the Docker image. Pushes to `main` and `v*` tags publish images to GitHub Container Registry as `ghcr.io/<owner>/<repository>` using `GITHUB_TOKEN`.
 
 ## Tests
 
-The database test configuration uses Testcontainers with PostgreSQL. Start Docker and supply the Paystack secret environment variable before running:
+Run the full suite with Docker available:
 
 ```bash
-mvn test
+bash ./mvnw --batch-mode verify
 ```
 
-## Current limitations
+The integration tests use Testcontainers by default. To run them against a local PostgreSQL test database instead, set `TEST_POSTGRES_CONTAINER=false` and provide `DB_URL`, `DB_USERNAME`, and `DB_PASSWORD`. Use an isolated disposable database; Flyway creates the schema.
 
-- Security configuration permits every request, and the test-order endpoint is available without authentication. Add access control before deploying publicly.
-- Payment reconciliation applies successful verification results. It does not transition failed provider payments to a local failed state.
-- Reconciliation exceptions are currently swallowed; logging, metrics, and alerts need implementation.
-- Refund initiation performs the provider call inside the database transaction. If Paystack accepts the refund but the local transaction fails, reconciliation is needed to resolve the outcome before retrying.
-- Timestamps use PostgreSQL `TIMESTAMPTZ` and Java `Instant`. A `+00:00` or `Z` suffix indicates UTC; Lagos time is UTC+1.
+## Operational notes
+
+- `PaymentEventSource.RECONCILIATION` identifies payment successes recovered by reconciliation.
+- Payments and refunds with `manual_review_required = true` need an operator to investigate.
+- `/api/v1/test-orders` and the current security configuration are development conveniences; add appropriate access control before exposing the service publicly.
+- Never store real credentials in source control. Compose reads a local `.env` file automatically if present; `.env` is ignored by Git.
