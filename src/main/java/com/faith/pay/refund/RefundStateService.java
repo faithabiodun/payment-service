@@ -34,12 +34,12 @@ public class RefundStateService {
             PaymentEventSource source,
             String rawPayload
     ) {
-        Refund initial = refunds.findByReference(refundReference)
+        String paymentReference = refunds.findPaymentReferenceByReference(refundReference)
                 .orElseThrow(() -> refundNotFound(refundReference));
 
         // Every refund state change locks payment first, then refund.
-        Payment payment = payments.findByReferenceForUpdate(initial.getPayment().getReference())
-                .orElseThrow(() -> new PaymentNotFoundException(initial.getPayment().getReference()));
+        Payment payment = payments.findByReferenceForUpdate(paymentReference)
+                .orElseThrow(() -> new PaymentNotFoundException(paymentReference));
         Refund refund = refunds.findByReferenceForUpdate(refundReference)
                 .orElseThrow(() -> refundNotFound(refundReference));
 

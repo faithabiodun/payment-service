@@ -24,6 +24,9 @@ public interface RefundRepository extends JpaRepository<Refund, Long> {
             """)
     Optional<Refund> findByReference(@Param("reference") String reference);
 
+    @Query("select p.reference from Refund r join r.payment p where r.reference = :reference")
+    Optional<String> findPaymentReferenceByReference(@Param("reference") String reference);
+
     Optional<Refund> findByProviderRefundId(String providerRefundId);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)

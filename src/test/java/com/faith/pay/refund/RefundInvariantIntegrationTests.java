@@ -5,6 +5,7 @@ import com.faith.pay.order.OrderRepository;
 import com.faith.pay.error.RefundAmountExceedsRemainingException;
 import com.faith.pay.payment.Payment;
 import com.faith.pay.payment.PaymentRepository;
+import com.faith.pay.payment.PaymentSettlementService;
 import com.faith.pay.payment.PaymentStatus;
 import com.faith.pay.payment.audit.PaymentEventSource;
 import com.faith.pay.provider.dto.PaystackRefundData;
@@ -37,6 +38,9 @@ class RefundInvariantIntegrationTests {
 
     @Autowired
     private PaymentRepository payments;
+
+    @Autowired
+    private PaymentSettlementService settlement;
 
     @Autowired
     private RefundRepository refunds;
@@ -146,6 +150,64 @@ class RefundInvariantIntegrationTests {
         assertEquals(0, countRefundAccountingViolations());
     }
 
+    @Test
+    void concurrentPaymentSuccessSettlementAppliesOrderAndAuditExactlyOnce() throws Exception {
+        Payment payment = openPayment(220_000L);
+        var provider = new com.faith.pay.provider.dto.PaystackTransactionData(
+                java.math.BigInteger.valueOf(8111), "success", payment.getReference(),
+                payment.getAmountKobo(), "NGN", "card", 0L, Instant.now());
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+
+        try {
+            Future<?> first = executor.submit(() -> settleConcurrently(payment, provider, ready, start));
+            Future<?> second = executor.submit(() -> settleConcurrently(payment, provider, ready, start));
+            assertTrue(ready.await(5, TimeUnit.SECONDS));
+            start.countDown();
+            first.get(10, TimeUnit.SECONDS);
+            second.get(10, TimeUnit.SECONDS);
+
+            Payment refreshed = payments.findByReference(payment.getReference()).orElseThrow();
+            assertEquals(PaymentStatus.SUCCESS, refreshed.getStatus());
+            assertEquals("PAID", refreshed.getOrder().getStatus().name());
+            assertEquals(1, jdbc.queryForObject("""
+                    SELECT COUNT(*) FROM payment_events e JOIN payments p ON p.id=e.payment_id
+                    WHERE p.reference=? AND e.event_type='PAYMENT_SUCCEEDED'
+                    """, Integer.class, payment.getReference()));
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    void concurrentProcessedRefundNotificationsIncreaseRefundedTotalOnlyOnce() throws Exception {
+        Payment payment = successfulPayment(350_000L);
+        RefundReservation reservation = commands.reserve(payment.getReference(),
+                new com.faith.pay.refund.dto.RefundRequest(150_000L, "race"),
+                "refund-race-" + UUID.randomUUID());
+        PaystackRefundData processed = new PaystackRefundData(java.math.BigInteger.valueOf(8112), "processed",
+                150_000L, "NGN", null, Instant.now());
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+
+        try {
+            Future<?> first = executor.submit(() -> applyRefundConcurrently(reservation.refundReference(), processed, ready, start));
+            Future<?> second = executor.submit(() -> applyRefundConcurrently(reservation.refundReference(), processed, ready, start));
+            assertTrue(ready.await(5, TimeUnit.SECONDS));
+            start.countDown();
+            first.get(10, TimeUnit.SECONDS);
+            second.get(10, TimeUnit.SECONDS);
+
+            assertEquals(150_000L, payments.findByReference(payment.getReference()).orElseThrow().getRefundedKobo());
+            assertEquals(RefundStatus.SUCCESS, refunds.findByReference(reservation.refundReference()).orElseThrow().getStatus());
+            assertEquals(1, countEvent(payment.getReference(), "REFUND_SUCCEEDED"));
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
     private boolean reserveConcurrently(
             String paymentReference,
             String idempotencyKey,
@@ -164,6 +226,44 @@ class RefundInvariantIntegrationTests {
         } catch (RefundAmountExceedsRemainingException rejected) {
             return false;
         }
+    }
+
+    private void settleConcurrently(Payment payment,
+                                    com.faith.pay.provider.dto.PaystackTransactionData provider,
+                                    CountDownLatch ready, CountDownLatch start) {
+        ready.countDown();
+        try {
+            if (!start.await(5, TimeUnit.SECONDS)) throw new IllegalStateException("Settlement race did not start");
+            settlement.settleSuccess(payment.getReference(), provider, PaymentEventSource.VERIFICATION, null);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(interrupted);
+        }
+    }
+
+    private void applyRefundConcurrently(String reference, PaystackRefundData provider,
+                                         CountDownLatch ready, CountDownLatch start) {
+        ready.countDown();
+        try {
+            if (!start.await(5, TimeUnit.SECONDS)) throw new IllegalStateException("Refund race did not start");
+            states.applyProviderState(reference, provider, PaymentEventSource.WEBHOOK, "{}");
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(interrupted);
+        }
+    }
+
+    private Payment openPayment(long amountKobo) {
+        String suffix = UUID.randomUUID().toString().replace("-", "");
+        Order order = orders.saveAndFlush(new Order("payment-race@example.test", amountKobo));
+        return payments.saveAndFlush(new Payment("PAY-RACE-" + suffix, order, amountKobo, "payment-race-" + suffix));
+    }
+
+    private int countEvent(String paymentReference, String eventType) {
+        return jdbc.queryForObject("""
+                SELECT COUNT(*) FROM payment_events e JOIN payments p ON p.id=e.payment_id
+                WHERE p.reference=? AND e.event_type=?
+                """, Integer.class, paymentReference, eventType);
     }
 
     private Payment successfulPayment(long amountKobo) {

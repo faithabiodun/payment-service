@@ -8,6 +8,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class PaymentRecoveryService {
+    public enum TransitionResult { CHANGED, ALREADY_CORRECT, CONTRADICTORY }
     private final PaymentRepository payments;
     private final PaymentEventStore events;
     private final ReconciliationAttemptStore attempts;
@@ -18,30 +19,30 @@ public class PaymentRecoveryService {
     }
 
     @Transactional
-    public boolean markFailed(String reference) { return transition(reference, false); }
+    public TransitionResult markFailed(String reference) { return transition(reference, false); }
     @Transactional
-    public boolean markAbandoned(String reference) { return transition(reference, true); }
+    public TransitionResult markAbandoned(String reference) { return transition(reference, true); }
 
-    private boolean transition(String reference, boolean abandoned) {
+    private TransitionResult transition(String reference, boolean abandoned) {
         Payment payment = payments.findByReferenceForUpdate(reference)
                 .orElseThrow(() -> new PaymentNotFoundException(reference));
         if (!payment.getStatus().isOpen()) {
             if ((!abandoned && payment.getStatus() == PaymentStatus.FAILED)
                     || (abandoned && payment.getStatus() == PaymentStatus.ABANDONED)) {
-                return false;
+                return TransitionResult.ALREADY_CORRECT;
             }
             payment.requireManualReview();
             events.append(payment, PaymentEventType.RECONCILIATION_MISMATCH,
                     payment.getStatus(), payment.getStatus(), PaymentEventSource.RECONCILIATION, null);
             attempts.append("PAYMENT", reference, "MANUAL_REVIEW", null,
                     "Provider terminal state contradicted local " + payment.getStatus());
-            return false;
+            return TransitionResult.CONTRADICTORY;
         }
         PaymentStatus previous = payment.getStatus();
         if (abandoned) payment.markAbandoned(); else payment.markFailed();
         events.append(payment, abandoned ? PaymentEventType.PAYMENT_ABANDONED : PaymentEventType.PAYMENT_FAILED,
                 previous, payment.getStatus(), PaymentEventSource.RECONCILIATION, null);
-        return true;
+        return TransitionResult.CHANGED;
     }
 
     @Transactional

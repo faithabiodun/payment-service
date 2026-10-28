@@ -56,16 +56,23 @@ public class PaymentReconciler {
                 }
             }
             case "failed" -> {
-                boolean changed = recovery.markFailed(reference);
-                recovery.recordAttempt(reference, changed ? "MARKED_FAILED" : "ALREADY_CORRECT", provider.status(),
-                        changed ? "Provider reports failed" : "Local payment was already resolved during provider lookup",
-                        properties.maxAttempts(), false);
+                PaymentRecoveryService.TransitionResult result = recovery.markFailed(reference);
+                if (result != PaymentRecoveryService.TransitionResult.CONTRADICTORY) {
+                    recovery.recordAttempt(reference,
+                            result == PaymentRecoveryService.TransitionResult.CHANGED ? "MARKED_FAILED" : "ALREADY_CORRECT",
+                            provider.status(), result == PaymentRecoveryService.TransitionResult.CHANGED
+                                    ? "Provider reports failed" : "Local payment was already failed",
+                            properties.maxAttempts(), false);
+                }
             }
             case "abandoned" -> {
                 if (candidate.getCreatedAt() != null && candidate.getCreatedAt().isBefore(Instant.now().minus(properties.abandonAfter()))) {
-                    boolean changed = recovery.markAbandoned(reference);
-                    recovery.recordAttempt(reference, changed ? "MARKED_ABANDONED" : "ALREADY_CORRECT", provider.status(),
-                            "Provider reports abandoned", properties.maxAttempts(), false);
+                    PaymentRecoveryService.TransitionResult result = recovery.markAbandoned(reference);
+                    if (result != PaymentRecoveryService.TransitionResult.CONTRADICTORY) {
+                        recovery.recordAttempt(reference,
+                                result == PaymentRecoveryService.TransitionResult.CHANGED ? "MARKED_ABANDONED" : "ALREADY_CORRECT",
+                                provider.status(), "Provider reports abandoned", properties.maxAttempts(), false);
+                    }
                 } else {
                     recovery.recordAttempt(reference, "STILL_OPEN", provider.status(),
                             "Abandoned provider transaction is younger than configured threshold",

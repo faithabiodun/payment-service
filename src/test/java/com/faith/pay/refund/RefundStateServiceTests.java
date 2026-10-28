@@ -40,6 +40,7 @@ class RefundStateServiceTests {
         refund = new Refund(payment, "REF-1", 250_000L, 250_000L, "Partial", "refund-key");
 
         when(refunds.findByReference("REF-1")).thenReturn(Optional.of(refund));
+        when(refunds.findPaymentReferenceByReference("REF-1")).thenReturn(Optional.of("PAY-1"));
         when(refunds.findByReferenceForUpdate("REF-1")).thenReturn(Optional.of(refund));
         when(payments.findByReferenceForUpdate("PAY-1")).thenReturn(Optional.of(payment));
         when(refunds.findByProviderRefundId("9001")).thenReturn(Optional.empty());
