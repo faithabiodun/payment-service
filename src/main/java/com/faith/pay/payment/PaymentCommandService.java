@@ -30,10 +30,15 @@ public class PaymentCommandService {
 
     @Transactional
     public PaymentReservation reserve(Long orderId, String idempotencyKey) {
+        return reserve(orderId, idempotencyKey, PaymentProviderType.PAYSTACK);
+    }
+
+    @Transactional
+    public PaymentReservation reserve(Long orderId, String idempotencyKey, PaymentProviderType provider) {
         var existing = payments.findByIdempotencyKey(idempotencyKey);
         if (existing.isPresent()) {
             Payment payment = existing.get();
-            if (!payment.getOrder().getId().equals(orderId)) {
+            if (!payment.getOrder().getId().equals(orderId) || payment.getProvider() != provider) {
                 throw new IdempotencyKeyReuseException();
             }
             return reservation(payment, false);
@@ -46,7 +51,7 @@ public class PaymentCommandService {
         existing = payments.findByIdempotencyKey(idempotencyKey);
         if (existing.isPresent()) {
             Payment payment = existing.get();
-            if (!payment.getOrder().getId().equals(orderId)) {
+            if (!payment.getOrder().getId().equals(orderId) || payment.getProvider() != provider) {
                 throw new IdempotencyKeyReuseException();
             }
             return reservation(payment, false);
@@ -64,7 +69,7 @@ public class PaymentCommandService {
             throw new PaymentAlreadyInProgressException(order.getId());
         }
 
-        Payment payment = new Payment(newReference(), order, order.getTotalKobo(), idempotencyKey);
+        Payment payment = new Payment(newReference(), order, order.getTotalKobo(), idempotencyKey, provider);
         payments.saveAndFlush(payment);
         events.append(payment, PaymentEventType.PAYMENT_RESERVED, null,
                 PaymentStatus.PENDING, PaymentEventSource.API, null);
@@ -78,11 +83,19 @@ public class PaymentCommandService {
         if (payment.getStatus() != PaymentStatus.PENDING) {
             return reservation(payment, false);
         }
+        if (provider.provider() != payment.getProvider()
+                || !payment.getReference().equals(provider.reference())) {
+            throw new AppException(ErrorCode.PROVIDER_RESPONSE_INVALID,
+                    org.springframework.http.HttpStatus.BAD_GATEWAY,
+                    "Initialization result does not match the reserved payment provider and reference");
+        }
 
         payment.markProcessing(provider.checkoutUrl(), provider.providerSessionId());
-        events.append(payment, PaymentEventType.PAYSTACK_INITIALIZED,
+        events.append(payment, payment.getProvider() == PaymentProviderType.PAYSTACK
+                        ? PaymentEventType.PAYSTACK_INITIALIZED : PaymentEventType.PROVIDER_INITIALIZED,
                 PaymentStatus.PENDING, PaymentStatus.PROCESSING,
-                PaymentEventSource.PAYSTACK_INITIALIZE, null);
+                payment.getProvider() == PaymentProviderType.PAYSTACK
+                        ? PaymentEventSource.PAYSTACK_INITIALIZE : PaymentEventSource.PROVIDER_INITIALIZE, null);
         return reservation(payment, false);
     }
 
@@ -99,16 +112,18 @@ public class PaymentCommandService {
         Payment payment = payments.findByReferenceForUpdate(reference)
                 .orElseThrow(() -> new PaymentNotFoundException(reference));
         if (payment.getStatus() == PaymentStatus.PENDING) {
-            events.append(payment, PaymentEventType.PAYSTACK_INITIALIZATION_UNCERTAIN,
+            boolean paystack = payment.getProvider() == PaymentProviderType.PAYSTACK;
+            events.append(payment, paystack ? PaymentEventType.PAYSTACK_INITIALIZATION_UNCERTAIN
+                            : PaymentEventType.PROVIDER_INITIALIZATION_UNCERTAIN,
                     PaymentStatus.PENDING, PaymentStatus.PENDING,
-                    PaymentEventSource.PAYSTACK_INITIALIZE, null);
+                    paystack ? PaymentEventSource.PAYSTACK_INITIALIZE : PaymentEventSource.PROVIDER_INITIALIZE, null);
         }
     }
 
     private PaymentReservation reservation(Payment payment, boolean newlyCreated) {
         return new PaymentReservation(payment.getId(), payment.getOrder().getId(),
                 payment.getOrder().getCustomerEmail(), payment.getAmountKobo(),
-                payment.getCurrency(), payment.getReference(), payment.getStatus(),
+                payment.getCurrency(), payment.getReference(), payment.getProvider(), payment.getStatus(),
                 payment.getAuthorizationUrl(), newlyCreated);
     }
 

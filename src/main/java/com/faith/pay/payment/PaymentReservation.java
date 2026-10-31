@@ -1,5 +1,7 @@
 package com.faith.pay.payment;
 
+import com.faith.pay.provider.core.PaymentProviderType;
+
 /** Internal result of reserving a payment before contacting the provider. */
 public record PaymentReservation(
         Long paymentId,
@@ -8,6 +10,7 @@ public record PaymentReservation(
         long amountKobo,
         String currency,
         String reference,
+        PaymentProviderType provider,
         PaymentStatus status,
         String authorizationUrl,
         boolean newlyCreated

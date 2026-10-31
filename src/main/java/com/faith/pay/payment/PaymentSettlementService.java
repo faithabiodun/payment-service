@@ -54,6 +54,12 @@ public class PaymentSettlementService {
                                 )
                         );
 
+        if (provider.provider() != payment.getProvider()) {
+            throw new AppException(ErrorCode.PROVIDER_RESPONSE_INVALID,
+                    org.springframework.http.HttpStatus.BAD_GATEWAY,
+                    "Verification result came from a provider that does not own this payment");
+        }
+
 
         /*
          * 4. Provider must actually say that the

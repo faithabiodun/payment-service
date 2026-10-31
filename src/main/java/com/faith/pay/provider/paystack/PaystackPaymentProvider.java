@@ -7,6 +7,7 @@ import com.faith.pay.provider.dto.PaystackTransactionData;
 import org.springframework.stereotype.Component;
 
 import java.util.Locale;
+import java.util.List;
 
 /** Translates Paystack's API vocabulary into the application's provider-neutral port. */
 @Component
@@ -40,16 +41,27 @@ public class PaystackPaymentProvider implements PaymentProvider, RefundProvider 
 
     @Override
     public ProviderRefundResult refund(ProviderRefundRequest request) {
-        var data = client.createRefund(request.paymentReference(), request.amountMinor(), request.refundReference(), request.reason());
+        var transaction = request.providerPaymentId() == null ? request.paymentReference() : request.providerPaymentId();
+        var data = client.createRefund(transaction, request.amountMinor(), request.refundReference(), request.reason());
         return new ProviderRefundResult(type(), data.id() == null ? null : data.id().toString(), request.refundReference(),
                 refundState(data.status()), data.amount(), data.currency(), data.status());
     }
 
     @Override
-    public VerifiedRefund verifyRefund(String providerRefundId) {
+    public VerifiedRefund verifyRefund(String providerRefundId, String currency) {
         var data = client.fetchRefund(providerRefundId);
         return new VerifiedRefund(type(), data.id() == null ? null : data.id().toString(), null,
                 refundState(data.status()), data.amount(), data.currency(), data.status());
+    }
+
+    @Override
+    public List<VerifiedRefund> findRefundsForPayment(String providerPaymentId, String localRefundReference,
+                                                      String currency) {
+        return client.listRefundsForTransaction(providerPaymentId).stream()
+                .filter(data -> data.merchantNote() != null
+                        && data.merchantNote().contains("Local refund: " + localRefundReference))
+                .map(data -> toVerifiedRefund(data, localRefundReference))
+                .toList();
     }
 
     public VerifiedRefund refundState(com.faith.pay.provider.dto.PaystackRefundData data, String localReference) {
@@ -80,7 +92,7 @@ public class PaystackPaymentProvider implements PaymentProvider, RefundProvider 
             case "processing", "ongoing" -> ProviderRefundState.PROCESSING;
             case "processed", "success", "succeeded" -> ProviderRefundState.SUCCEEDED;
             case "failed" -> ProviderRefundState.FAILED;
-            case "needs_attention" -> ProviderRefundState.NEEDS_ATTENTION;
+            case "needs_attention", "needs-attention" -> ProviderRefundState.NEEDS_ATTENTION;
             default -> ProviderRefundState.UNKNOWN;
         };
     }

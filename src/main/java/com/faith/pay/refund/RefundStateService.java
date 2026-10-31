@@ -31,7 +31,7 @@ public class RefundStateService {
     }
 
     @Transactional
-    public Refund applyProviderState(
+    public Refund applyVerifiedState(
             String refundReference,
             VerifiedRefund provider,
             PaymentEventSource source,
@@ -116,6 +116,9 @@ public class RefundStateService {
                 || provider.providerStatus() == null || provider.providerStatus().isBlank()) {
             throw invalidProviderResponse("Provider refund did not include a recognized status");
         }
+        if (provider.provider() != payment.getProvider()) {
+            throw invalidProviderResponse("Refund result provider does not own this payment");
+        }
         if (provider.amountMinor() != refund.getAmountKobo()) {
             throw invalidProviderResponse("Provider refund amount did not match the reserved amount");
         }
@@ -134,7 +137,7 @@ public class RefundStateService {
                 throw invalidProviderResponse("Provider returned a different id for this refund");
             }
 
-            refunds.findByProviderRefundId(providerRefundId)
+            refunds.findByProviderAndProviderRefundId(provider.provider(), providerRefundId)
                     .filter(other -> !other.getReference().equals(refund.getReference()))
                     .ifPresent(other -> {
                         throw invalidProviderResponse("Provider refund id is already linked to another refund");
@@ -160,7 +163,7 @@ public class RefundStateService {
     @Transactional
     public Refund applyProviderState(String refundReference, PaystackRefundData provider,
                                      PaymentEventSource source, String rawPayload) {
-        return applyProviderState(refundReference,
+        return applyVerifiedState(refundReference,
                 PaystackPaymentProvider.toVerifiedRefund(provider, refundReference), source, rawPayload);
     }
 

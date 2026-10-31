@@ -76,7 +76,7 @@ public class PaymentController {
                 reference,
 
                 "message",
-                "Returned from Paystack. " +
+                "Returned from the payment provider. " +
                         "Payment has not been trusted " +
                         "from this callback."
         );

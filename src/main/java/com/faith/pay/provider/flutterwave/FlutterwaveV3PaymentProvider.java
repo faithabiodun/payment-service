@@ -1,6 +1,5 @@
 package com.faith.pay.provider.flutterwave;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.faith.pay.config.FlutterwaveV3Properties;
 import com.faith.pay.error.ProviderCommunicationException;
 import com.faith.pay.provider.core.*;
@@ -8,6 +7,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
+import tools.jackson.databind.JsonNode;
 
 import java.math.BigDecimal;
 import java.time.Duration;
@@ -15,10 +15,11 @@ import java.time.Instant;
 import java.util.Currency;
 import java.util.Locale;
 import java.util.Map;
+import java.util.List;
 
 /** Flutterwave V3 Standard hosted-checkout adapter for the supplied V3 test-key family. */
 @Component
-public class FlutterwaveV3PaymentProvider implements PaymentProvider {
+public class FlutterwaveV3PaymentProvider implements PaymentProvider, RefundProvider {
     private final WebClient client;
     private final String callbackUrl;
 
@@ -75,6 +76,82 @@ public class FlutterwaveV3PaymentProvider implements PaymentProvider {
             case "failed" -> ProviderPaymentState.FAILED;
             case "cancelled", "canceled" -> ProviderPaymentState.CANCELLED;
             default -> ProviderPaymentState.UNKNOWN;
+        };
+    }
+
+    @Override
+    public ProviderRefundResult refund(ProviderRefundRequest request) {
+        if (request.providerPaymentId() == null || request.providerPaymentId().isBlank()) {
+            throw new IllegalArgumentException("Flutterwave refund requires the verified transaction ID");
+        }
+        Map<String, Object> body = Map.of(
+                "amount", majorAmount(request.amountMinor(), request.currency()),
+                "comments", "Local refund: " + request.refundReference()
+                        + (request.reason() == null ? "" : " | " + request.reason())
+        );
+        JsonNode data = post("/transactions/" + request.providerPaymentId() + "/refund", body);
+        String refundId = text(data, "id");
+        String rawStatus = text(data, "status");
+        return new ProviderRefundResult(type(), refundId, request.refundReference(), refundState(rawStatus),
+                minorAmount(data.path("amount_refunded").decimalValue(), request.currency()),
+                request.currency(), rawStatus);
+    }
+
+    @Override
+    public VerifiedRefund verifyRefund(String providerRefundId, String currency) {
+        JsonNode response;
+        try {
+            response = client.get().uri("/refunds/{id}", providerRefundId)
+                    .retrieve().bodyToMono(JsonNode.class).block(Duration.ofSeconds(10));
+        } catch (RuntimeException failure) {
+            throw new ProviderCommunicationException("Could not verify refund with Flutterwave", failure);
+        }
+        JsonNode data = data(response);
+        String rawStatus = text(data, "status");
+        String id = text(data, "id");
+        return new VerifiedRefund(type(), id == null ? providerRefundId : id, null, refundState(rawStatus),
+                minorAmount(data.path("amount_refunded").decimalValue(), currency), currency, rawStatus);
+    }
+
+    @Override
+    public List<VerifiedRefund> findRefundsForPayment(String providerPaymentId, String localRefundReference,
+                                                      String currency) {
+        JsonNode response;
+        try {
+            response = client.get().uri(uri -> uri.path("/refunds")
+                            .queryParam("from", "2020-01-01")
+                            .queryParam("to", java.time.LocalDate.now(java.time.ZoneOffset.UTC).toString())
+                            .queryParam("id", providerPaymentId)
+                            .queryParam("currency", currency).build())
+                    .retrieve().bodyToMono(JsonNode.class).block(Duration.ofSeconds(10));
+        } catch (RuntimeException failure) {
+            throw new ProviderCommunicationException("Could not search Flutterwave refunds", failure);
+        }
+        JsonNode rows = response == null ? null : response.path("data");
+        if (rows == null || !rows.isArray()) return List.of();
+        return java.util.stream.StreamSupport.stream(rows.spliterator(), false)
+                .filter(row -> {
+                    String comments = text(row, "comments");
+                    if (comments == null) comments = text(row, "comment");
+                    return comments != null && comments.contains("Local refund: " + localRefundReference);
+                })
+                .map(row -> {
+                    String rawStatus = text(row, "status");
+                    String id = text(row, "id");
+                    return new VerifiedRefund(type(), id, localRefundReference, refundState(rawStatus),
+                            minorAmount(row.path("amount_refunded").decimalValue(), currency), currency, rawStatus);
+                })
+                .toList();
+    }
+
+    public static ProviderRefundState refundState(String value) {
+        if (value == null) return ProviderRefundState.UNKNOWN;
+        return switch (value.toLowerCase(Locale.ROOT)) {
+            case "completed" -> ProviderRefundState.PROCESSING;
+            case "processing", "pending-momo", "pending-bank-transfer", "pending-mpgs" -> ProviderRefundState.PROCESSING;
+            case "completed-bank-transfer", "completed-momo", "completed-mpgs", "completed-offline", "completed-preauth" -> ProviderRefundState.SUCCEEDED;
+            case "failed", "failed-momo", "failed-bank-transfer", "failed-mpgs" -> ProviderRefundState.FAILED;
+            default -> ProviderRefundState.UNKNOWN;
         };
     }
 

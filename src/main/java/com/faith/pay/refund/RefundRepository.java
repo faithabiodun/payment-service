@@ -4,6 +4,7 @@ import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.*;
 import org.springframework.data.repository.query.Param;
 import org.springframework.data.domain.Pageable;
+import com.faith.pay.provider.core.PaymentProviderType;
 import java.time.Instant;
 
 import java.util.Collection;
@@ -28,6 +29,11 @@ public interface RefundRepository extends JpaRepository<Refund, Long> {
     Optional<String> findPaymentReferenceByReference(@Param("reference") String reference);
 
     Optional<Refund> findByProviderRefundId(String providerRefundId);
+
+    @Query("select r from Refund r join fetch r.payment where r.provider = :provider and r.providerRefundId = :providerRefundId")
+    Optional<Refund> findByProviderAndProviderRefundId(
+            @Param("provider") PaymentProviderType provider,
+            @Param("providerRefundId") String providerRefundId);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""

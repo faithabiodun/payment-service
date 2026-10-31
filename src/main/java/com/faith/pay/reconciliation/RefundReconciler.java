@@ -2,6 +2,9 @@ package com.faith.pay.reconciliation;
 
 import com.faith.pay.payment.audit.PaymentEventSource;
 import com.faith.pay.provider.PaystackClient;
+import com.faith.pay.provider.core.PaymentProviderType;
+import com.faith.pay.provider.core.RefundProviderRegistry;
+import com.faith.pay.provider.core.VerifiedRefund;
 import com.faith.pay.provider.dto.PaystackRefundData;
 import com.faith.pay.refund.*;
 import org.slf4j.Logger;
@@ -17,15 +20,22 @@ public class RefundReconciler {
     private final RefundStateService states;
     private final RefundRecoveryService recovery;
     private final ReconciliationProperties properties;
+    private final RefundProviderRegistry providers;
 
     public RefundReconciler(PaystackClient paystack, RefundStateService states,
-                            RefundRecoveryService recovery, ReconciliationProperties properties) {
+                            RefundRecoveryService recovery, ReconciliationProperties properties,
+                            RefundProviderRegistry providers) {
         this.paystack = paystack; this.states = states; this.recovery = recovery; this.properties = properties;
+        this.providers = providers;
     }
 
     public void reconcile(Refund refund) {
         String reference = refund.getReference();
         log.info("Reconciliation checking refund {}", reference);
+        if (refund.getProvider() != PaymentProviderType.PAYSTACK) {
+            reconcileNonPaystack(refund);
+            return;
+        }
         try {
             if (refund.getProviderRefundId() != null) {
                 PaystackRefundData provider = paystack.fetchRefund(refund.getProviderRefundId());
@@ -70,6 +80,52 @@ public class RefundReconciler {
                 recovery.flagManualReview(reference, null, safeDetail(failure));
                 log.warn("Refund {} requires manual review during reconciliation", reference, failure);
             }
+        }
+    }
+
+    private void reconcileNonPaystack(Refund refund) {
+        String reference = refund.getReference();
+        if (refund.getProviderRefundId() == null) {
+            String providerPaymentId = refund.getPayment().getProviderTransactionId();
+            if (providerPaymentId == null || providerPaymentId.isBlank()) {
+                recovery.recordAttempt(reference, "PROVIDER_RESULT_UNKNOWN", null,
+                        "Refund outcome is ambiguous and the payment has no provider transaction ID",
+                        properties.maxAttempts(), true);
+                return;
+            }
+            try {
+                List<VerifiedRefund> found = providers.get(refund.getProvider()).findRefundsForPayment(
+                        providerPaymentId, reference, refund.getPayment().getCurrency());
+                if (found.size() == 1) {
+                    VerifiedRefund provider = found.getFirst();
+                    states.applyVerifiedState(reference, provider, PaymentEventSource.RECONCILIATION, null);
+                    recovery.recordAttempt(reference, "RECOVERED", provider.providerStatus(),
+                            "Recovered provider refund using the local refund marker",
+                            properties.maxAttempts(), false);
+                } else if (found.size() > 1) {
+                    recovery.flagManualReview(reference, null,
+                            "Multiple provider refunds match the local refund marker");
+                } else {
+                    recovery.recordAttempt(reference, "PROVIDER_RESULT_UNKNOWN", null,
+                            "No matching provider refund found yet; the operation was not resubmitted",
+                            properties.maxAttempts(), true);
+                }
+            } catch (RuntimeException failure) {
+                recovery.recordAttempt(reference, "PROVIDER_UNAVAILABLE", null, safeDetail(failure),
+                        properties.maxAttempts(), true);
+            }
+            return;
+        }
+        try {
+            VerifiedRefund provider = providers.get(refund.getProvider())
+                    .verifyRefund(refund.getProviderRefundId(), refund.getPayment().getCurrency());
+            states.applyVerifiedState(reference, provider, PaymentEventSource.RECONCILIATION, null);
+            recovery.recordAttempt(reference, "SYNCHRONIZED", provider.providerStatus(),
+                    "Provider refund state synchronized", properties.maxAttempts(), false);
+        } catch (RuntimeException failure) {
+            recovery.recordAttempt(reference, "PROVIDER_UNAVAILABLE", null, safeDetail(failure),
+                    properties.maxAttempts(), true);
+            log.warn("Provider unavailable while reconciling refund {}", reference, failure);
         }
     }
 

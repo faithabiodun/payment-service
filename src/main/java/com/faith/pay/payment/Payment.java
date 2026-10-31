@@ -108,10 +108,16 @@ public class Payment {
             long amountKobo,
             String idempotencyKey
     ) {
+        this(reference, order, amountKobo, idempotencyKey, PaymentProviderType.PAYSTACK);
+    }
+
+    public Payment(String reference, Order order, long amountKobo, String idempotencyKey,
+                   PaymentProviderType provider) {
         this.reference = reference;
         this.order = order;
         this.amountKobo = amountKobo;
         this.idempotencyKey = idempotencyKey;
+        this.provider = provider;
     }
 
     @PrePersist

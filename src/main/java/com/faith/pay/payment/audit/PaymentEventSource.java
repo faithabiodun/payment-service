@@ -6,6 +6,8 @@ public enum PaymentEventSource {
 
     PAYSTACK_INITIALIZE,
 
+    PROVIDER_INITIALIZE,
+
     VERIFICATION,
 
     WEBHOOK,

@@ -4,8 +4,7 @@ import com.faith.pay.error.ProviderCommunicationException;
 import com.faith.pay.payment.Payment;
 import com.faith.pay.payment.PaymentRepository;
 import com.faith.pay.payment.audit.PaymentEventSource;
-import com.faith.pay.provider.PaystackClient;
-import com.faith.pay.provider.dto.PaystackRefundData;
+import com.faith.pay.provider.core.*;
 import com.faith.pay.refund.dto.RefundRequest;
 import com.faith.pay.refund.dto.RefundResponse;
 import org.springframework.stereotype.Service;
@@ -17,23 +16,23 @@ public class RefundService {
     private final RefundStateService refundStates;
     private final RefundRepository refunds;
     private final PaymentRepository payments;
-    private final PaystackClient paystack;
+    private final RefundProviderRegistry providers;
 
     public RefundService(
             RefundCommandService commands,
             RefundStateService refundStates,
             RefundRepository refunds,
             PaymentRepository payments,
-            PaystackClient paystack
+            RefundProviderRegistry providers
     ) {
         this.commands = commands;
         this.refundStates = refundStates;
         this.refunds = refunds;
         this.payments = payments;
-        this.paystack = paystack;
+        this.providers = providers;
     }
 
-    /** Reserves locally, then calls Paystack after the reservation transaction commits. */
+    /** Reserves locally, then calls the selected provider after the reservation transaction commits. */
     public RefundResponse refund(String paymentReference, RefundRequest request, String idempotencyKey) {
         RefundReservation reservation = commands.reserve(paymentReference, request, idempotencyKey);
 
@@ -45,15 +44,15 @@ public class RefundService {
                 .orElseThrow();
 
         try {
-            PaystackRefundData provider = paystack.createRefund(
-                    payment.getReference(),
-                    reservation.amountKobo(),
+            RefundProvider provider = providers.get(payment.getProvider());
+            ProviderRefundResult result = provider.refund(new ProviderRefundRequest(
+                    payment.getReference(), payment.getProviderTransactionId(), reservation.refundReference(),
+                    reservation.amountKobo(), payment.getCurrency(), request.reason(), idempotencyKey));
+            VerifiedRefund normalized = new VerifiedRefund(result.provider(), result.providerRefundId(),
+                    result.refundReference(), result.state(), result.amountMinor(), result.currency(), result.providerStatus());
+            return RefundResponse.from(refundStates.applyVerifiedState(
                     reservation.refundReference(),
-                    request.reason()
-            );
-            return RefundResponse.from(refundStates.applyProviderState(
-                    reservation.refundReference(),
-                    provider,
+                    normalized,
                     PaymentEventSource.REFUND,
                     null
             ));

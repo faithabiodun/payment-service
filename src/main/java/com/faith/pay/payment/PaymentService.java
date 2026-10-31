@@ -49,7 +49,9 @@ public class PaymentService {
         }
 
 
-        PaymentReservation reservation = commands.reserve(request.orderId(), idempotencyKey);
+        PaymentProviderType selectedProvider = request.provider() == null
+                ? PaymentProviderType.PAYSTACK : request.provider();
+        PaymentReservation reservation = commands.reserve(request.orderId(), idempotencyKey, selectedProvider);
 
         if (!reservation.newlyCreated()) {
             return response(reservation);
@@ -57,7 +59,7 @@ public class PaymentService {
 
 
         try {
-            PaymentProvider provider = providers.get(PaymentProviderType.PAYSTACK);
+            PaymentProvider provider = providers.get(reservation.provider());
             ProviderPaymentResult result = provider.initialize(new ProviderPaymentRequest(
                     reservation.reference(), reservation.email(), reservation.amountKobo(),
                     reservation.currency(), null, idempotencyKey));
@@ -65,7 +67,7 @@ public class PaymentService {
             return response(commands.markInitialized(reservation.reference(), result));
 
         } catch (ProviderCommunicationException failure) {
-            // Paystack may have accepted the request before the connection failed.
+            // The provider may have accepted the request before the connection failed.
             // Keep the reservation and record that the outcome needs reconciliation.
             commands.markInitializationUncertain(reservation.reference());
             throw failure;
