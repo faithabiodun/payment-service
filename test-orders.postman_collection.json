@@ -97,7 +97,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"faith@example.com\",\n  \"amountKobo\": 500000\n}",
+              "raw": "{\n  \"email\": \"{{orderEmail}}\",\n  \"amountKobo\": {{orderAmountKobo}}\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -136,7 +136,7 @@
                 "exec": [
                   "pm.test('Order created', () => pm.response.to.have.status(201));",
                   "const order = pm.response.json();",
-                  "pm.test('Order amount is authoritative minor units', () => pm.expect(order.amountKobo).to.eql(500000));",
+                  "const expectedAmount = Number(pm.environment.get('orderAmountKobo') || 500000); pm.test('Order amount is authoritative minor units', () => pm.expect(order.amountKobo).to.eql(expectedAmount));",
                   "if (order.id) pm.collectionVariables.set('orderId', order.id);"
                 ]
               }
@@ -575,7 +575,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"amountKobo\": 125000,\n  \"reason\": \"sample partial refund\"\n}",
+              "raw": "{\n  \"amountKobo\": {{refundAmountKobo}},\n  \"reason\": \"sample partial refund\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -661,7 +661,7 @@
             "description": "Immediately replay the last refund with the same Idempotency-Key. Expected: same refund reference, one provider-side refund.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"amountKobo\": 125000,\n  \"reason\": \"sample partial refund\"\n}",
+              "raw": "{\n  \"amountKobo\": {{refundAmountKobo}},\n  \"reason\": \"sample partial refund\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -721,7 +721,7 @@
             "description": "Run only after the 125000-kobo partial refund has SUCCEEDED for the 500000-kobo payment. 400000 is then greater than the remaining capacity and must be rejected without calling the provider.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"amountKobo\": 400000,\n  \"reason\": \"over remaining refundable amount test\"\n}",
+              "raw": "{\n  \"amountKobo\": {{refundOverCapacityKobo}},\n  \"reason\": \"over remaining refundable amount test\"\n}",
               "options": {
                 "raw": {
                   "language": "json"

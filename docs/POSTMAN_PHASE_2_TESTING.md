@@ -5,9 +5,9 @@
 Import these two files into Postman:
 
 * test-orders.postman_collection.json
-* payment-service.postman_environment.example.json
+* payment-service.postman_environment.local.json
 
-Select **Payment Service - Local Phase 2 (Template)** and duplicate it as a private local environment. Fill the blank values from your local app configuration. If you export a local copy, name it with the suffix .postman_environment.local.json; Git ignores that pattern so credentials do not get committed.
+The local environment is ignored by Git and has the provider webhook secrets copied from the app's .env without printing them. It is still missing API customer/admin/monitoring credentials because those are not present in .env. Add those to .env, restart the app, and enter the same account values into the local Postman environment. The committed payment-service.postman_environment.example.json remains a blank template. If you export another local copy, name it with the suffix .postman_environment.local.json; Git ignores that pattern.
 
 The API user variables are separate from payment-provider API keys:
 
@@ -38,7 +38,7 @@ Content-Type: application/json
 }
 ~~~
 
-500000 minor units is NGN 5,000. The collection saves id as orderId and generates a fresh paymentIdempotencyKey for this order.
+The example environment defaults to NGN 5,000 (500000 minor units) and faith@example.com. Edit orderAmountKobo and orderEmail there to change the sample. The collection saves id as orderId and generates a fresh paymentIdempotencyKey for this order.
 
 ### Initialize one provider
 
@@ -72,7 +72,7 @@ The existing refund request is admin-authenticated and sends:
 }
 ~~~
 
-This requests NGN 1,250. Run it only after the provider transaction is genuinely successful and local state is SUCCESS or PARTIALLY_REFUNDED. Immediately run Replay Last Refund to send the same idempotency key. To test the capacity check after the first refund succeeds, Refund More Than Remaining Capacity requests 400,000 kobo; the remaining amount is only 375,000, so it should return a 4xx response without starting another provider refund.
+The environment defaults to NGN 1,250 (125000 kobo). Run the request only after the provider transaction is genuinely successful and local state is SUCCESS or PARTIALLY_REFUNDED. Immediately run Replay Last Refund to send the same idempotency key. For the default 500000-kobo payment and a successful 125000-kobo refund, the default 400000-kobo over-capacity sample exceeds the 375000 remaining amount and should return a 4xx response without starting another provider refund.
 
 ## Signed webhook inbox samples
 
