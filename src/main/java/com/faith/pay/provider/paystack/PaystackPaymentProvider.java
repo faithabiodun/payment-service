@@ -21,7 +21,7 @@ public class PaystackPaymentProvider implements PaymentProvider, RefundProvider 
     public ProviderPaymentResult initialize(ProviderPaymentRequest request) {
         PaystackInitializeData data = client.initialize(request.customerEmail(), request.amountMinor(), request.reference());
         return new ProviderPaymentResult(type(), null, request.reference(), ProviderPaymentState.REQUIRES_ACTION,
-                data.authorizationUrl(), null);
+                data.authorizationUrl(), null, data.accessCode());
     }
 
     @Override
@@ -30,7 +30,11 @@ public class PaystackPaymentProvider implements PaymentProvider, RefundProvider 
     }
 
     public VerifiedPayment payment(PaystackTransactionData data) {
-        return new VerifiedPayment(type(), data.id() == null ? null : data.id().toString(), data.reference(),
+        return toVerifiedPayment(data);
+    }
+
+    public static VerifiedPayment toVerifiedPayment(PaystackTransactionData data) {
+        return new VerifiedPayment(PaymentProviderType.PAYSTACK, data.id() == null ? null : data.id().toString(), data.reference(),
                 paymentState(data.status()), data.amount(), data.currency(), data.channel(), data.fees(), data.paidAt());
     }
 
@@ -49,7 +53,11 @@ public class PaystackPaymentProvider implements PaymentProvider, RefundProvider 
     }
 
     public VerifiedRefund refundState(com.faith.pay.provider.dto.PaystackRefundData data, String localReference) {
-        return new VerifiedRefund(type(), data.id() == null ? null : data.id().toString(), localReference,
+        return toVerifiedRefund(data, localReference);
+    }
+
+    public static VerifiedRefund toVerifiedRefund(com.faith.pay.provider.dto.PaystackRefundData data, String localReference) {
+        return new VerifiedRefund(PaymentProviderType.PAYSTACK, data.id() == null ? null : data.id().toString(), localReference,
                 refundState(data.status()), data.amount(), data.currency(), data.status());
     }
 

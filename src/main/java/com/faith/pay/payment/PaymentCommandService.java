@@ -3,7 +3,9 @@ package com.faith.pay.payment;
 import com.faith.pay.error.*;
 import com.faith.pay.order.*;
 import com.faith.pay.payment.audit.*;
+import com.faith.pay.provider.core.ProviderPaymentResult;
 import com.faith.pay.provider.dto.PaystackInitializeData;
+import com.faith.pay.provider.core.PaymentProviderType;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -70,18 +72,26 @@ public class PaymentCommandService {
     }
 
     @Transactional
-    public PaymentReservation markInitialized(String reference, PaystackInitializeData provider) {
+    public PaymentReservation markInitialized(String reference, ProviderPaymentResult provider) {
         Payment payment = payments.findByReferenceForUpdate(reference)
                 .orElseThrow(() -> new PaymentNotFoundException(reference));
         if (payment.getStatus() != PaymentStatus.PENDING) {
             return reservation(payment, false);
         }
 
-        payment.markProcessing(provider.authorizationUrl(), provider.accessCode());
+        payment.markProcessing(provider.checkoutUrl(), provider.providerSessionId());
         events.append(payment, PaymentEventType.PAYSTACK_INITIALIZED,
                 PaymentStatus.PENDING, PaymentStatus.PROCESSING,
                 PaymentEventSource.PAYSTACK_INITIALIZE, null);
         return reservation(payment, false);
+    }
+
+    /** Legacy Paystack boundary retained for callers not yet migrated. */
+    @Transactional
+    public PaymentReservation markInitialized(String reference, PaystackInitializeData provider) {
+        return markInitialized(reference, new ProviderPaymentResult(PaymentProviderType.PAYSTACK, null,
+                provider.reference(), com.faith.pay.provider.core.ProviderPaymentState.REQUIRES_ACTION,
+                provider.authorizationUrl(), null, provider.accessCode()));
     }
 
     @Transactional

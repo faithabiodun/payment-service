@@ -3,9 +3,7 @@ package com.faith.pay.payment;
 import com.faith.pay.error.*;
 import com.faith.pay.payment.audit.PaymentEventSource;
 import com.faith.pay.payment.dto.*;
-import com.faith.pay.provider.PaystackClient;
-import com.faith.pay.provider.dto.PaystackInitializeData;
-import com.faith.pay.provider.dto.PaystackTransactionData;
+import com.faith.pay.provider.core.*;
 import com.faith.pay.provider.dto.VerifyPaymentResponse;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -17,7 +15,7 @@ public class PaymentService {
 
     private final PaymentRepository payments;
 
-    private final PaystackClient paystackClient;
+    private final PaymentProviderRegistry providers;
 
     private final PaymentSettlementService settlement;
 
@@ -25,7 +23,7 @@ public class PaymentService {
     public PaymentService(
             PaymentCommandService commands,
             PaymentRepository payments,
-            PaystackClient paystackClient,
+            PaymentProviderRegistry providers,
             PaymentSettlementService settlement
     ) {
 
@@ -33,7 +31,7 @@ public class PaymentService {
 
         this.payments = payments;
 
-        this.paystackClient = paystackClient;
+        this.providers = providers;
 
         this.settlement = settlement;
     }
@@ -59,10 +57,12 @@ public class PaymentService {
 
 
         try {
-            PaystackInitializeData provider = paystackClient.initialize(
-                    reservation.email(), reservation.amountKobo(), reservation.reference());
+            PaymentProvider provider = providers.get(PaymentProviderType.PAYSTACK);
+            ProviderPaymentResult result = provider.initialize(new ProviderPaymentRequest(
+                    reservation.reference(), reservation.email(), reservation.amountKobo(),
+                    reservation.currency(), null, idempotencyKey));
 
-            return response(commands.markInitialized(reservation.reference(), provider));
+            return response(commands.markInitialized(reservation.reference(), result));
 
         } catch (ProviderCommunicationException failure) {
             // Paystack may have accepted the request before the connection failed.
@@ -90,7 +90,10 @@ public class PaymentService {
          * External HTTP request.
          */
 
-        PaystackTransactionData provider = paystackClient.verify(reference);
+        Payment payment = payments.findByReference(reference)
+                .orElseThrow(() -> new PaymentNotFoundException(reference));
+        VerifiedPayment provider = providers.get(payment.getProvider()).verify(reference,
+                payment.getProviderTransactionId());
 
 
         /*
@@ -116,7 +119,7 @@ public class PaymentService {
          * transaction succeeded.
          */
 
-        if ("success".equalsIgnoreCase(provider.status())) {
+        if (provider.succeeded()) {
 
             SettlementResult result = settlement.settleSuccess(
                     reference,
@@ -145,7 +148,7 @@ public class PaymentService {
          */
 
         return new VerifyPaymentResponse(
-                provider.status(),
+                    provider.state().name(),
                 applied,
                 get(reference)
         );

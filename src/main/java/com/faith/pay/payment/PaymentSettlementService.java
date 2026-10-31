@@ -2,6 +2,9 @@ package com.faith.pay.payment;
 
 import com.faith.pay.error.*;
 import com.faith.pay.payment.audit.*;
+import com.faith.pay.provider.core.ProviderPaymentState;
+import com.faith.pay.provider.core.VerifiedPayment;
+import com.faith.pay.provider.paystack.PaystackPaymentProvider;
 import com.faith.pay.provider.dto.PaystackTransactionData;
 
 import org.springframework.stereotype.Service;
@@ -28,7 +31,7 @@ public class PaymentSettlementService {
     @Transactional
     public SettlementResult settleSuccess(
             String expectedReference,
-            PaystackTransactionData provider,
+            VerifiedPayment provider,
             PaymentEventSource source,
             String rawPayload
     ) {
@@ -56,10 +59,7 @@ public class PaymentSettlementService {
          * 4. Provider must actually say that the
          *    financial transaction succeeded.
          */
-        if (!"success"
-                .equalsIgnoreCase(
-                        provider.status()
-                )) {
+        if (provider.state() != ProviderPaymentState.SUCCEEDED) {
 
             throw new AppException(
                     ErrorCode.PAYMENT_NOT_SUCCESSFUL,
@@ -68,7 +68,7 @@ public class PaymentSettlementService {
                             .HttpStatus.CONFLICT,
 
                     "Provider transaction is "
-                            + provider.status()
+                            + provider.state()
                             + ", not success"
             );
         }
@@ -94,12 +94,12 @@ public class PaymentSettlementService {
         /*
          * 6. The amount must match OUR database.
          */
-        if (provider.amount()
+        if (provider.amountMinor()
                 != payment.getAmountKobo()) {
 
             throw new PaymentAmountMismatchException(
                     payment.getAmountKobo(),
-                    provider.amount()
+                    provider.amountMinor()
             );
         }
 
@@ -126,7 +126,7 @@ public class PaymentSettlementService {
          * 8. Provider transaction id is required
          *    for successful settlement.
          */
-        if (provider.id() == null) {
+        if (provider.providerPaymentId() == null) {
 
             throw new AppException(
                     ErrorCode.PROVIDER_RESPONSE_INVALID,
@@ -142,7 +142,7 @@ public class PaymentSettlementService {
         /* Validate provider truth before treating a replay as idempotent. */
         if (payment.getStatus().hasSuccessfulCharge()) {
             if (payment.getProviderTransactionId() != null
-                    && !payment.getProviderTransactionId().equals(provider.id().toString())) {
+                    && !payment.getProviderTransactionId().equals(provider.providerPaymentId())) {
                 throw new AppException(ErrorCode.PROVIDER_RESPONSE_INVALID,
                         org.springframework.http.HttpStatus.BAD_GATEWAY,
                         "Provider transaction id differs from the settled payment");
@@ -164,11 +164,11 @@ public class PaymentSettlementService {
          * 9. Update the payment.
          */
         payment.markSuccessful(
-                provider.id().toString(),
+                provider.providerPaymentId(),
 
                 provider.channel(),
 
-                provider.fees() == null ? 0L : provider.fees(),
+                provider.feeMinor() == null ? 0L : provider.feeMinor(),
 
                 provider.paidAt()
         );
@@ -209,5 +209,12 @@ public class PaymentSettlementService {
          * returns successfully.
          */
         return SettlementResult.APPLIED;
+    }
+
+    /** Compatibility edge for existing Paystack webhook callers during the adapter migration. */
+    @Transactional
+    public SettlementResult settleSuccess(String expectedReference, PaystackTransactionData provider,
+                                          PaymentEventSource source, String rawPayload) {
+        return settleSuccess(expectedReference, PaystackPaymentProvider.toVerifiedPayment(provider), source, rawPayload);
     }
 }

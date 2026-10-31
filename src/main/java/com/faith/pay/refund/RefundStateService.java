@@ -3,6 +3,9 @@ package com.faith.pay.refund;
 import com.faith.pay.error.*;
 import com.faith.pay.payment.*;
 import com.faith.pay.payment.audit.*;
+import com.faith.pay.provider.core.ProviderRefundState;
+import com.faith.pay.provider.core.VerifiedRefund;
+import com.faith.pay.provider.paystack.PaystackPaymentProvider;
 import com.faith.pay.provider.dto.PaystackRefundData;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -30,7 +33,7 @@ public class RefundStateService {
     @Transactional
     public Refund applyProviderState(
             String refundReference,
-            PaystackRefundData provider,
+            VerifiedRefund provider,
             PaymentEventSource source,
             String rawPayload
     ) {
@@ -45,7 +48,7 @@ public class RefundStateService {
 
         validateProviderData(refund, payment, provider, source);
 
-        RefundStatus target = mapStatus(provider.status());
+        RefundStatus target = mapStatus(provider.state());
         RefundStatus current = refund.getStatus();
 
         if (current.isTerminal()) {
@@ -57,7 +60,7 @@ public class RefundStateService {
 
         if (current == RefundStatus.NEEDS_ATTENTION
                 && target == RefundStatus.PROCESSING
-                && "pending".equalsIgnoreCase(provider.status())) {
+                && "pending".equalsIgnoreCase(provider.providerStatus())) {
             // Ignore an older pending notification after Paystack requested more details.
             return refund;
         }
@@ -67,25 +70,23 @@ public class RefundStateService {
         }
 
         if (current == target
-                && provider.status().equalsIgnoreCase(refund.getProviderStatus())
-                && (provider.id() == null
-                    || provider.id().toString().equals(refund.getProviderRefundId()))) {
+                && provider.providerStatus().equalsIgnoreCase(refund.getProviderStatus())
+                && (provider.providerRefundId() == null
+                    || provider.providerRefundId().equals(refund.getProviderRefundId()))) {
             return refund;
         }
 
         PaymentStatus paymentStatus = payment.getStatus();
         boolean submitted = current == RefundStatus.PENDING;
         boolean statusChanged = current != target;
-        String providerRefundId = provider.id() == null
-                ? null
-                : provider.id().toString();
+        String providerRefundId = provider.providerRefundId();
 
         switch (target) {
-            case PROCESSING -> refund.markProcessing(providerRefundId, provider.status());
-            case NEEDS_ATTENTION -> refund.markNeedsAttention(providerRefundId, provider.status());
-            case FAILED -> refund.markFailed(providerRefundId, provider.status());
+            case PROCESSING -> refund.markProcessing(providerRefundId, provider.providerStatus());
+            case NEEDS_ATTENTION -> refund.markNeedsAttention(providerRefundId, provider.providerStatus());
+            case FAILED -> refund.markFailed(providerRefundId, provider.providerStatus());
             case SUCCESS -> {
-                refund.markSuccessful(providerRefundId, provider.status());
+                refund.markSuccessful(providerRefundId, provider.providerStatus());
                 payment.addRefundedKobo(refund.getAmountKobo());
             }
             case PENDING -> throw invalidTransition(current, target);
@@ -108,34 +109,35 @@ public class RefundStateService {
     private void validateProviderData(
             Refund refund,
             Payment payment,
-            PaystackRefundData provider,
+            VerifiedRefund provider,
             PaymentEventSource source
     ) {
-        if (provider == null || provider.status() == null || provider.status().isBlank()) {
-            throw invalidProviderResponse("Paystack refund did not include a status");
+        if (provider == null || provider.state() == null || provider.state() == ProviderRefundState.UNKNOWN
+                || provider.providerStatus() == null || provider.providerStatus().isBlank()) {
+            throw invalidProviderResponse("Provider refund did not include a recognized status");
         }
-        if (provider.amount() != refund.getAmountKobo()) {
-            throw invalidProviderResponse("Paystack refund amount did not match the reserved amount");
+        if (provider.amountMinor() != refund.getAmountKobo()) {
+            throw invalidProviderResponse("Provider refund amount did not match the reserved amount");
         }
         if (provider.currency() == null
                 || !payment.getCurrency().equalsIgnoreCase(provider.currency())) {
-            throw invalidProviderResponse("Paystack refund currency did not match the payment currency");
+            throw invalidProviderResponse("Provider refund currency did not match the payment currency");
         }
-        if (source == PaymentEventSource.REFUND && provider.id() == null) {
-            throw invalidProviderResponse("Paystack refund response did not include an id");
+        if (source == PaymentEventSource.REFUND && provider.providerRefundId() == null) {
+            throw invalidProviderResponse("Provider refund response did not include an id");
         }
 
-        String providerRefundId = provider.id() == null ? null : provider.id().toString();
+        String providerRefundId = provider.providerRefundId();
         if (providerRefundId != null) {
             if (refund.getProviderRefundId() != null
                     && !refund.getProviderRefundId().equals(providerRefundId)) {
-                throw invalidProviderResponse("Paystack returned a different id for this refund");
+                throw invalidProviderResponse("Provider returned a different id for this refund");
             }
 
             refunds.findByProviderRefundId(providerRefundId)
                     .filter(other -> !other.getReference().equals(refund.getReference()))
                     .ifPresent(other -> {
-                        throw invalidProviderResponse("Paystack refund id is already linked to another refund");
+                        throw invalidProviderResponse("Provider refund id is already linked to another refund");
                     });
         }
 
@@ -144,14 +146,22 @@ public class RefundStateService {
         }
     }
 
-    private RefundStatus mapStatus(String providerStatus) {
-        return switch (providerStatus.toLowerCase(Locale.ROOT)) {
-            case "pending", "processing" -> RefundStatus.PROCESSING;
-            case "needs-attention", "needs_attention" -> RefundStatus.NEEDS_ATTENTION;
-            case "failed" -> RefundStatus.FAILED;
-            case "processed" -> RefundStatus.SUCCESS;
-            default -> throw invalidProviderResponse("Unsupported Paystack refund status: " + providerStatus);
+    private RefundStatus mapStatus(ProviderRefundState providerState) {
+        return switch (providerState) {
+            case PENDING, PROCESSING -> RefundStatus.PROCESSING;
+            case NEEDS_ATTENTION -> RefundStatus.NEEDS_ATTENTION;
+            case FAILED -> RefundStatus.FAILED;
+            case SUCCEEDED -> RefundStatus.SUCCESS;
+            case UNKNOWN -> throw invalidProviderResponse("Unsupported provider refund status");
         };
+    }
+
+    /** Temporary Paystack edge retained while webhook and reconciliation callers migrate. */
+    @Transactional
+    public Refund applyProviderState(String refundReference, PaystackRefundData provider,
+                                     PaymentEventSource source, String rawPayload) {
+        return applyProviderState(refundReference,
+                PaystackPaymentProvider.toVerifiedRefund(provider, refundReference), source, rawPayload);
     }
 
     private boolean canTransition(RefundStatus current, RefundStatus target) {
