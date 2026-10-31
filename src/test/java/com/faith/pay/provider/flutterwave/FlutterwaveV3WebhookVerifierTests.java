@@ -16,6 +16,7 @@ class FlutterwaveV3WebhookVerifierTests {
     }
 
     private FlutterwaveV3Properties properties(String hash) {
-        return new FlutterwaveV3Properties("https://api.flutterwave.com/v3", "test-secret", hash, "http://localhost/callback");
+        return new FlutterwaveV3Properties("https://api.flutterwave.com/v3", "public", "test-secret",
+                "encryption", hash, "http://localhost/callback");
     }
 }

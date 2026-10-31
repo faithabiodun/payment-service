@@ -1,4 +1,6 @@
 spring:
+  config:
+    import: optional:file:.env[.properties]
   application:
     name: payment-service
 
@@ -31,7 +33,9 @@ paystack:
 # webhook hash are used server-side. Never put key values in this file.
 flutterwave-v3:
   base-url: ${FLUTTERWAVE_V3_BASE_URL:https://api.flutterwave.com/v3}
+  public-key: ${FLUTTERWAVE_V3_PUBLIC_KEY:}
   secret-key: ${FLUTTERWAVE_V3_SECRET_KEY:}
+  encryption-key: ${FLUTTERWAVE_V3_ENCRYPTION_KEY:}
   webhook-secret-hash: ${FLUTTERWAVE_V3_WEBHOOK_SECRET_HASH:}
   callback-url: ${FLUTTERWAVE_V3_CALLBACK_URL:http://localhost:8080/api/v1/payments/callback}
 
