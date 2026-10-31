@@ -7,6 +7,7 @@ import com.faith.pay.provider.core.ProviderRefundState;
 import com.faith.pay.provider.core.VerifiedRefund;
 import com.faith.pay.provider.paystack.PaystackPaymentProvider;
 import com.faith.pay.provider.dto.PaystackRefundData;
+import com.faith.pay.outbox.OutboxEventStore;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -19,15 +20,18 @@ public class RefundStateService {
     private final RefundRepository refunds;
     private final PaymentRepository payments;
     private final PaymentEventStore events;
+    private final OutboxEventStore outbox;
 
     public RefundStateService(
             RefundRepository refunds,
             PaymentRepository payments,
-            PaymentEventStore events
+            PaymentEventStore events,
+            OutboxEventStore outbox
     ) {
         this.refunds = refunds;
         this.payments = payments;
         this.events = events;
+        this.outbox = outbox;
     }
 
     @Transactional
@@ -101,6 +105,13 @@ public class RefundStateService {
             PaymentEventType event = eventFor(target);
             events.append(payment, event,
                     paymentStatus, payment.getStatus(), source, rawPayload);
+            outbox.append("REFUND", refund.getReference(), event.name(),
+                    java.util.Map.of("refundReference", refund.getReference(),
+                            "paymentReference", payment.getReference(),
+                            "provider", payment.getProvider().name(),
+                            "amountMinor", refund.getAmountKobo(),
+                            "currency", payment.getCurrency(),
+                            "status", target.name()));
         }
 
         return refund;

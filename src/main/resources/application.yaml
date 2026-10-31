@@ -67,6 +67,11 @@ webhook:
     lease-seconds: ${WEBHOOK_INBOX_LEASE_SECONDS:120}
     poll-millis: ${WEBHOOK_INBOX_POLL_MILLIS:3000}
 
+outbox:
+  batch-size: ${OUTBOX_BATCH_SIZE:25}
+  lease-seconds: ${OUTBOX_LEASE_SECONDS:120}
+  poll-millis: ${OUTBOX_POLL_MILLIS:3000}
+
 reconciliation:
   payment-stale-after: ${RECONCILIATION_PAYMENT_STALE_AFTER:PT10M}
   abandon-after: ${RECONCILIATION_ABANDON_AFTER:PT24H}

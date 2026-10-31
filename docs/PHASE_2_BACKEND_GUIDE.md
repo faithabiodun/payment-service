@@ -250,6 +250,37 @@ The design follows the providers' own webhook guidance to respond quickly, verif
 
 Webhook delivery is at least once, so I persist the authenticated raw event before acknowledging it, use provider-specific stable deduplication material, claim work with leases and `SKIP LOCKED`, and make the financial effect idempotent. This provides exactly-once business effect without claiming exactly-once delivery.
 
+## Checkpoint 8 — Transactional outbox
+
+### What problem does the outbox solve?
+
+The dual-write problem occurs when one operation writes PostgreSQL and separately sends a message. A crash between those writes leaves one side missing. The outbox writes an event row in the same transaction as the successful payment or refund transition. A separate worker later dispatches it.
+
+### Current flow and files
+
+`PaymentSettlementService` now appends `PAYMENT_SUCCEEDED` through `OutboxEventStore` after updating the payment/order and audit history. `RefundStateService` appends `REFUND_*` events for state changes. Both are already transactional services, so the outbox INSERT participates in the same PostgreSQL transaction. `OutboxRepository` claims rows with `SKIP LOCKED` and expiring leases. `OutboxWorker` retries delivery failures with exponential delay and jitter, then dead-letters after eight attempts.
+
+```text
+TX: payment/refund state transition
+  + payment audit history
+  + INSERT outbox_events
+COMMIT
+
+worker: claim lease -> OutboxSink.dispatch -> mark PUBLISHED
+```
+
+`OutboxSink` is the adapter boundary for email, a queue, or another service. The current `LoggingOutboxSink` only emits a structured event summary because this application has no email or broker integration yet; it does not claim to send a customer notification. A real sink should use the outbox row ID as its idempotency key because delivery can repeat if a process dies after dispatch but before marking the row published.
+
+`V10__create_outbox.sql` adds a JSONB payload, constrained status, retry metadata, a lease, and a partial index for rows ready to dispatch. Outbox payloads contain only the minimum domain values needed downstream and omit customer PII.
+
+**Exercise:** What happens if dispatch succeeds, then the process crashes before `PUBLISHED` is saved?
+
+**Solution:** The lease expires and the row is dispatched again. The downstream sink/consumer must deduplicate by the stable outbox row ID.
+
+### What you should be able to explain as a backend developer
+
+The payment and its outbox event commit atomically, so downstream work cannot be silently lost after a committed payment. The worker is at least once, not exactly once; consumers need idempotency. The outbox is a database pattern, not a message broker.
+
 **Exercise:** Why does the local payment store both `cs_...` and `pi_...` identifiers?
 
 **Solution:** The Checkout Session ID identifies the hosted checkout used to retrieve the attempt before payment completes. The PaymentIntent ID identifies Stripe's payment lifecycle and is the correct reference for settlement/refunds. They describe related but different objects.

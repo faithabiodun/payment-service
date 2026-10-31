@@ -6,6 +6,7 @@ import com.faith.pay.provider.core.ProviderPaymentState;
 import com.faith.pay.provider.core.VerifiedPayment;
 import com.faith.pay.provider.paystack.PaystackPaymentProvider;
 import com.faith.pay.provider.dto.PaystackTransactionData;
+import com.faith.pay.outbox.OutboxEventStore;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -17,14 +18,18 @@ public class PaymentSettlementService {
 
     private final PaymentEventStore events;
 
+    private final OutboxEventStore outbox;
+
 
     public PaymentSettlementService(
             PaymentRepository payments,
-            PaymentEventStore events
+            PaymentEventStore events,
+            OutboxEventStore outbox
     ) {
 
         this.payments = payments;
         this.events = events;
+        this.outbox = outbox;
     }
 
 
@@ -208,6 +213,10 @@ public class PaymentSettlementService {
 
                 rawPayload
         );
+
+        outbox.append("PAYMENT", payment.getReference(), "PAYMENT_SUCCEEDED",
+                java.util.Map.of("reference", payment.getReference(), "provider", payment.getProvider().name(),
+                        "amountMinor", payment.getAmountKobo(), "currency", payment.getCurrency()));
 
 
         /*
