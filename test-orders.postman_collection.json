@@ -1,7 +1,7 @@
 {
   "info": {
-    "name": "Payment Service - API Testing",
-    "description": "Exercise test-order creation, Paystack, Flutterwave or Stripe hosted checkout, provider-backed verification, signed webhook handling, refunds, and local payment status. Flutterwave and Stripe requests explicitly select their provider. Do not fake success webhooks: the application re-verifies transactions with the selected provider.",
+    "name": "Payment Service - Phase 2 End-to-End Testing",
+    "description": "Use with the companion local environment. Authenticated APIs use customer Basic credentials; refund requests use admin credentials; Prometheus uses monitoring credentials. Run a separate order per provider and complete the hosted TEST checkout before verification/refunds. Signed synthetic webhook requests test authentication, durable inbox acknowledgement, deduplication, and metrics only: they use allow-listed no-op event types and MUST NOT settle payments. Ledger/outbox/reconciliation/concurrency checks that are not API endpoints are documented in docs/POSTMAN_PHASE_2_TESTING.md.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -34,336 +34,1109 @@
       "key": "refundStatus",
       "value": "",
       "type": "string"
+    },
+    {
+      "key": "provider",
+      "value": "PAYSTACK",
+      "type": "string"
+    },
+    {
+      "key": "paymentIdempotencyKey",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "paymentId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "authorizationUrl",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "paymentStatus",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "settlementApplied",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "refundIdempotencyKey",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "webhookSampleId",
+      "value": "",
+      "type": "string"
     }
   ],
   "item": [
     {
-      "name": "Create Test Order",
-      "request": {
-        "method": "POST",
-        "header": [
-          { "key": "Content-Type", "value": "application/json" },
-          { "key": "Accept", "value": "application/json" }
-        ],
-        "body": {
-          "mode": "raw",
-          "raw": "{\n  \"email\": \"faith@example.com\",\n  \"amountKobo\": 500000\n}",
-          "options": { "raw": { "language": "json" } }
-        },
-        "description": "Creates an order for NGN 5,000 and saves its returned id as the collection variable orderId.",
-        "url": {
-          "raw": "{{baseUrl}}/api/v1/test-orders",
-          "host": ["{{baseUrl}}"],
-          "path": ["api", "v1", "test-orders"]
-        }
-      },
-      "event": [
+      "name": "Payments and Provider Routing",
+      "description": "Create one new order per provider; run checkout and verification before starting a different provider attempt.",
+      "item": [
         {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "const order = pm.response.json();",
-              "if (order.id) pm.collectionVariables.set('orderId', order.id);"
-            ]
-          }
-        }
-      ],
-      "response": []
-    },
-    {
-      "name": "Initialize Payment",
-      "request": {
-        "method": "POST",
-        "header": [
-          { "key": "Idempotency-Key", "value": "{{$guid}}" },
-          { "key": "Content-Type", "value": "application/json" },
-          { "key": "Accept", "value": "application/json" }
-        ],
-        "body": {
-          "mode": "raw",
-          "raw": "{\n  \"orderId\": {{orderId}}\n}",
-          "options": { "raw": { "language": "json" } }
-        },
-        "url": {
-          "raw": "{{baseUrl}}/api/v1/payments/initialize",
-          "host": ["{{baseUrl}}"],
-          "path": ["api", "v1", "payments", "initialize"]
-        },
-        "description": "Run after Create Test Order. The collection automatically uses the new order ID. The response includes reference, amountKobo, status, authorizationUrl, and accessCode."
-      },
-      "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "const payment = pm.response.json();",
-              "if (payment.reference) pm.collectionVariables.set('reference', payment.reference);",
-              "if (payment.amountKobo) pm.collectionVariables.set('amountKobo', payment.amountKobo);"
-            ]
-          }
-        }
-      ],
-      "response": []
-    },
-    {
-      "name": "Initialize Flutterwave Payment",
-      "request": {
-        "method": "POST",
-        "header": [
-          {
-            "key": "Idempotency-Key",
-            "value": "{{$guid}}"
-          },
-          {
-            "key": "Content-Type",
-            "value": "application/json"
-          },
-          {
-            "key": "Accept",
-            "value": "application/json"
-          }
-        ],
-        "body": {
-          "mode": "raw",
-          "raw": "{\n  \"orderId\": {{orderId}},\n  \"provider\": \"FLUTTERWAVE\"\n}",
-          "options": {
-            "raw": {
-              "language": "json"
+          "name": "Create Test Order",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"faith@example.com\",\n  \"amountKobo\": 500000\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Create a fresh authoritative NGN 5,000 order. This also generates a new payment idempotency key for this order.",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/test-orders",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "test-orders"
+              ]
             }
-          }
-        },
-        "url": {
-          "raw": "{{baseUrl}}/api/v1/payments/initialize",
-          "host": [
-            "{{baseUrl}}"
-          ],
-          "path": [
-            "api",
-            "v1",
-            "payments",
-            "initialize"
-          ]
-        },
-        "description": "Run after Create Test Order. Explicitly selects Flutterwave for this payment attempt. Open the returned authorizationUrl and complete the Flutterwave TEST checkout. Provider choice is persisted on this attempt."
-      },
-      "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "const payment = pm.response.json();",
-              "if (payment.reference) pm.collectionVariables.set('reference', payment.reference);",
-              "if (payment.amountKobo) pm.collectionVariables.set('amountKobo', payment.amountKobo);",
-              "if (payment.authorizationUrl) pm.collectionVariables.set('authorizationUrl', payment.authorizationUrl);",
-              "pm.test('Flutterwave checkout URL returned', () => pm.expect(payment.authorizationUrl).to.be.a('string').and.not.empty);"
-            ]
-          }
-        }
-      ],
-      "response": []
-    },
-    {
-      "name": "Initialize Stripe Payment",
-      "request": {
-        "method": "POST",
-        "header": [
-          {
-            "key": "Idempotency-Key",
-            "value": "{{$guid}}"
           },
-          {
-            "key": "Content-Type",
-            "value": "application/json"
-          },
-          {
-            "key": "Accept",
-            "value": "application/json"
-          }
-        ],
-        "body": {
-          "mode": "raw",
-          "raw": "{\n  \"orderId\": {{orderId}},\n  \"provider\": \"STRIPE\"\n}",
-          "options": {
-            "raw": {
-              "language": "json"
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('paymentIdempotencyKey', pm.variables.replaceIn('{{$guid}}'));",
+                  "pm.collectionVariables.unset('reference');",
+                  "pm.collectionVariables.unset('paymentId');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Order created', () => pm.response.to.have.status(201));",
+                  "const order = pm.response.json();",
+                  "pm.test('Order amount is authoritative minor units', () => pm.expect(order.amountKobo).to.eql(500000));",
+                  "if (order.id) pm.collectionVariables.set('orderId', order.id);"
+                ]
+              }
             }
-          }
-        },
-        "url": {
-          "raw": "{{baseUrl}}/api/v1/payments/initialize",
-          "host": [
-            "{{baseUrl}}"
           ],
-          "path": [
-            "api",
-            "v1",
-            "payments",
-            "initialize"
+          "response": []
+        },
+        {
+          "name": "Initialize Payment",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{paymentIdempotencyKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"orderId\": {{orderId}},\n  \"provider\": \"PAYSTACK\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/payments/initialize",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "payments",
+                "initialize"
+              ]
+            },
+            "description": "Run after Create Test Order. Provider is explicitly PAYSTACK and persisted before provider HTTP. Open authorizationUrl, finish the provider TEST checkout, then run Verify Payment."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('provider', 'PAYSTACK');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Payment attempt reserved and initialized', () => pm.response.to.have.status(201));",
+                  "const payment = pm.response.json();",
+                  "pm.test('Response uses the local order amount', () => pm.expect(payment.amountKobo).to.eql(500000));",
+                  "if (payment.reference) pm.collectionVariables.set('reference', payment.reference);",
+                  "if (payment.paymentId) pm.collectionVariables.set('paymentId', payment.paymentId);",
+                  "if (payment.amountKobo) pm.collectionVariables.set('amountKobo', payment.amountKobo);",
+                  "if (payment.authorizationUrl) pm.collectionVariables.set('authorizationUrl', payment.authorizationUrl);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Initialize Flutterwave Payment",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{paymentIdempotencyKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"orderId\": {{orderId}},\n  \"provider\": \"FLUTTERWAVE\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/payments/initialize",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "payments",
+                "initialize"
+              ]
+            },
+            "description": "Run after creating a NEW test order. Explicitly selects FLUTTERWAVE; complete the hosted TEST checkout before verification. Provider choice cannot be changed on this attempt."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('provider', 'FLUTTERWAVE');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('FLUTTERWAVE payment initialized', () => pm.response.to.have.status(201));",
+                  "const payment = pm.response.json();",
+                  "if (payment.reference) pm.collectionVariables.set('reference', payment.reference);",
+                  "if (payment.paymentId) pm.collectionVariables.set('paymentId', payment.paymentId);",
+                  "if (payment.amountKobo) pm.collectionVariables.set('amountKobo', payment.amountKobo);",
+                  "if (payment.authorizationUrl) pm.collectionVariables.set('authorizationUrl', payment.authorizationUrl);",
+                  "pm.test('FLUTTERWAVE hosted checkout URL returned', () => pm.expect(payment.authorizationUrl).to.be.a('string').and.not.empty);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Initialize Stripe Payment",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{paymentIdempotencyKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"orderId\": {{orderId}},\n  \"provider\": \"STRIPE\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/payments/initialize",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "payments",
+                "initialize"
+              ]
+            },
+            "description": "Run after creating a NEW test order. Explicitly selects STRIPE; complete the hosted TEST checkout before verification. Provider choice cannot be changed on this attempt."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('provider', 'STRIPE');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('STRIPE payment initialized', () => pm.response.to.have.status(201));",
+                  "const payment = pm.response.json();",
+                  "if (payment.reference) pm.collectionVariables.set('reference', payment.reference);",
+                  "if (payment.paymentId) pm.collectionVariables.set('paymentId', payment.paymentId);",
+                  "if (payment.amountKobo) pm.collectionVariables.set('amountKobo', payment.amountKobo);",
+                  "if (payment.authorizationUrl) pm.collectionVariables.set('authorizationUrl', payment.authorizationUrl);",
+                  "pm.test('STRIPE hosted checkout URL returned', () => pm.expect(payment.authorizationUrl).to.be.a('string').and.not.empty);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Replay Payment Initialization (Same Idempotency Key)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{paymentIdempotencyKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/payments/initialize",
+            "description": "Send immediately after an initialize request. It reuses the exact order, provider, and local Idempotency-Key; it should return the same payment attempt/reference.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"orderId\": {{orderId}},\n  \"provider\": \"{{provider}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Idempotent replay is successful', () => pm.expect([200, 201]).to.include(pm.response.code));",
+                  "const replay = pm.response.json();",
+                  "pm.test('Replay returns the same payment reference', () => pm.expect(replay.reference).to.eql(pm.collectionVariables.get('reference')));"
+                ]
+              }
+            }
           ]
         },
-        "description": "Run after Create Test Order. Explicitly selects Stripe for this attempt. Open the returned authorizationUrl and complete Stripe TEST Checkout. Requires STRIPE_SECRET_KEY in the app environment. The local order amount is authoritative."
-      },
-      "event": [
         {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "const payment = pm.response.json();",
-              "if (payment.reference) pm.collectionVariables.set('reference', payment.reference);",
-              "if (payment.amountKobo) pm.collectionVariables.set('amountKobo', payment.amountKobo);",
-              "if (payment.authorizationUrl) pm.collectionVariables.set('authorizationUrl', payment.authorizationUrl);",
-              "pm.test('Stripe Checkout URL returned', () => pm.expect(payment.authorizationUrl).to.be.a('string').and.not.empty);"
-            ]
-          }
-        }
-      ],
-      "response": []
-    },
-    {
-      "name": "Verify Payment",
-      "request": {
-        "method": "POST",
-        "header": [
-          { "key": "Accept", "value": "application/json" }
-        ],
-        "url": {
-          "raw": "{{baseUrl}}/api/v1/payments/{{reference}}/verify",
-          "host": ["{{baseUrl}}"],
-          "path": ["api", "v1", "payments", "{{reference}}", "verify"]
+          "name": "Verify Payment",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/payments/{{reference}}/verify",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "payments",
+                "{{reference}}",
+                "verify"
+              ]
+            },
+            "description": "After completing hosted TEST checkout, re-query the provider saved on this payment attempt. A redirect is not proof of payment."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Provider verification returned', () => pm.response.to.have.status(200));",
+                  "const result = pm.response.json();",
+                  "if (result.providerStatus) pm.collectionVariables.set('providerStatus', result.providerStatus);",
+                  "if (result.payment && result.payment.status) pm.collectionVariables.set('paymentStatus', result.payment.status);",
+                  "if (result.settlementApplied !== undefined) pm.collectionVariables.set('settlementApplied', String(result.settlementApplied));"
+                ]
+              }
+            }
+          ],
+          "response": []
         },
-        "description": "After completing the selected provider checkout, verifies with the provider already saved on this payment attempt. For Flutterwave, this uses Flutterwave verification; the browser redirect itself does not settle the payment."
-      },
-      "event": [
         {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "const result = pm.response.json();",
-              "if (result.providerStatus) pm.collectionVariables.set('providerStatus', result.providerStatus);",
-              "if (result.payment && result.payment.status) pm.collectionVariables.set('paymentStatus', result.payment.status);",
-              "if (result.settlementApplied !== undefined) pm.collectionVariables.set('settlementApplied', String(result.settlementApplied));"
-            ]
-          }
-        }
-      ],
-      "response": []
-    },
-    {
-      "name": "Initiate Partial Refund",
-      "request": {
-        "method": "POST",
-        "header": [
-          { "key": "Idempotency-Key", "value": "{{$guid}}" },
-          { "key": "Content-Type", "value": "application/json" },
-          { "key": "Accept", "value": "application/json" }
-        ],
-        "body": {
-          "mode": "raw",
-          "raw": "{\n  \"amountKobo\": 125000,\n  \"reason\": \"sample partial refund\"\n}",
-          "options": { "raw": { "language": "json" } }
-        },
-        "url": {
-          "raw": "{{baseUrl}}/api/v1/payments/{{reference}}/refunds",
-          "host": ["{{baseUrl}}"],
-          "path": ["api", "v1", "payments", "{{reference}}", "refunds"]
-        },
-        "description": "Run only after a real checkout with the selected provider has succeeded and local payment status is SUCCESS or PARTIALLY_REFUNDED. Synthetic webhook samples do not create a provider transaction and cannot be refunded at the provider."
-      },
-      "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "const refund = pm.response.json();",
-              "if (refund.reference) pm.collectionVariables.set('refundReference', refund.reference);",
-              "if (refund.status) pm.collectionVariables.set('refundStatus', refund.status);"
-            ]
-          }
-        }
-      ],
-      "response": []
-    },
-    {
-      "name": "Simulate Paystack Success Webhook",
-      "request": {
-        "method": "POST",
-        "header": [
-          { "key": "Content-Type", "value": "application/json" },
-          { "key": "x-paystack-signature", "value": "" }
-        ],
-        "body": {
-          "mode": "raw",
-          "raw": "{}",
-          "options": { "raw": { "language": "json" } }
-        },
-        "url": {
-          "raw": "{{baseUrl}}/webhooks/paystack",
-          "host": ["{{baseUrl}}"],
-          "path": ["webhooks", "paystack"]
-        },
-        "description": "Local webhook simulation for testing only. First initialize a payment, then set the Postman environment variable paystackSecretKey to the same secret configured by PAYSTACK_SECRET_KEY. The pre-request script signs the exact request body. This does not contact Paystack or prove that a real payment occurred."
-      },
-      "event": [
-        {
-          "listen": "prerequest",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "const secret = pm.environment.get('paystackSecretKey');",
-              "if (!secret) throw new Error('Set the Postman environment variable paystackSecretKey to your local Paystack secret key.');",
-              "const reference = pm.collectionVariables.get('reference');",
-              "const amount = Number(pm.collectionVariables.get('amountKobo'));",
-              "if (!reference || !Number.isSafeInteger(amount) || amount <= 0) throw new Error('Run Initialize Payment first so the collection has a valid reference and amountKobo.');",
-              "const body = JSON.stringify({ event: 'charge.success', data: { id: Date.now(), status: 'success', reference, amount, currency: 'NGN', channel: 'card', fees: 0, paid_at: new Date().toISOString() } });",
-              "pm.request.body.update({ mode: 'raw', raw: body });",
-              "const signature = CryptoJS.HmacSHA512(body, secret).toString(CryptoJS.enc.Hex);",
-              "pm.request.headers.upsert({ key: 'x-paystack-signature', value: signature });"
-            ]
-          }
-        }
-      ],
-      "response": []
-    },
-    {
-      "name": "Paystack Callback",
-      "request": {
-        "method": "GET",
-        "header": [
-          { "key": "Accept", "value": "application/json" }
-        ],
-        "url": {
-          "raw": "{{baseUrl}}/api/v1/payments/callback?reference={{reference}}",
-          "host": ["{{baseUrl}}"],
-          "path": ["api", "v1", "payments", "callback"],
-          "query": [
-            { "key": "reference", "value": "{{reference}}" }
+          "name": "Get Payment Status",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/payments/{{reference}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "payments",
+                "{{reference}}"
+              ]
+            },
+            "description": "Read the local payment state after provider verification or durable webhook processing."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Local payment status is returned', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
           ]
         },
-        "description": "Paystack return URL endpoint. It only returns the reference and a message; it does not verify or settle the payment. Use Verify Payment to contact Paystack and update local payment state."
-      },
-      "response": []
+        {
+          "name": "Browser Return Callback (UX Only)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/payments/callback?reference={{reference}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "payments",
+                "callback"
+              ],
+              "query": [
+                {
+                  "key": "reference",
+                  "value": "{{reference}}"
+                }
+              ]
+            },
+            "description": "Public browser return route. Returns the reference and explanatory message; does not verify or settle the payment.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Reject Unknown Provider (Expected 4xx)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/payments/initialize",
+            "description": "Checks enum validation. No payment attempt should be created for an unsupported provider.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"orderId\": {{orderId}},\n  \"provider\": \"NOT_A_PROVIDER\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Unsupported provider rejected', () => pm.expect(pm.response.code).to.be.oneOf([400, 422]));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
     },
     {
-      "name": "Get Payment Status",
-      "request": {
-        "method": "GET",
-        "header": [
-          { "key": "Accept", "value": "application/json" }
-        ],
-        "url": {
-          "raw": "{{baseUrl}}/api/v1/payments/{{reference}}",
-          "host": ["{{baseUrl}}"],
-          "path": ["api", "v1", "payments", "{{reference}}"]
+      "name": "Refunds",
+      "description": "Only for a genuinely successful payment. Refund mutation requires API_ADMIN_USERNAME/API_ADMIN_PASSWORD.",
+      "item": [
+        {
+          "name": "Initiate Partial Refund",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{refundIdempotencyKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amountKobo\": 125000,\n  \"reason\": \"sample partial refund\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/payments/{{reference}}/refunds",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "payments",
+                "{{reference}}",
+                "refunds"
+              ]
+            },
+            "description": "ADMIN only. Run after a real provider transaction is verified SUCCESS. Sample partial refund: NGN 1,250 (125000 kobo). A fake webhook cannot create refundable provider funds.",
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "{{apiAdminUsername}}",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{apiAdminPassword}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const key = pm.variables.replaceIn('{{$guid}}');",
+                  "pm.collectionVariables.set('refundIdempotencyKey', key);",
+                  "pm.request.headers.upsert({ key: 'Idempotency-Key', value: key });"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Refund reservation accepted', () => pm.expect([200, 201, 202]).to.include(pm.response.code));",
+                  "const refund = pm.response.json();",
+                  "if (refund.reference) pm.collectionVariables.set('refundReference', refund.reference);",
+                  "if (refund.status) pm.collectionVariables.set('refundStatus', refund.status);"
+                ]
+              }
+            }
+          ],
+          "response": []
         },
-        "description": "Check the local state after provider verification or after Flutterwave sends its signed webhook through the configured public URL."
-      },
-      "response": []
+        {
+          "name": "Replay Last Refund (Same Idempotency Key)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{refundIdempotencyKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/payments/{{reference}}/refunds",
+            "description": "Immediately replay the last refund with the same Idempotency-Key. Expected: same refund reference, one provider-side refund.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amountKobo\": 125000,\n  \"reason\": \"sample partial refund\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "{{apiAdminUsername}}",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{apiAdminPassword}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Refund idempotency replay accepted', () => pm.expect([200, 201, 202]).to.include(pm.response.code));",
+                  "const replay = pm.response.json();",
+                  "pm.test('Replay returns same refund reference', () => pm.expect(replay.reference).to.eql(pm.collectionVariables.get('refundReference')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Refund More Than Remaining Capacity (Expected 4xx)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/payments/{{reference}}/refunds",
+            "description": "Run only after the 125000-kobo partial refund has SUCCEEDED for the 500000-kobo payment. 400000 is then greater than the remaining capacity and must be rejected without calling the provider.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amountKobo\": 400000,\n  \"reason\": \"over remaining refundable amount test\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "{{apiAdminUsername}}",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{apiAdminPassword}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Refund exceeding remaining capacity rejected', () => pm.expect(pm.response.code).to.be.oneOf([400, 409, 422]));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Webhooks and Durable Inbox",
+      "description": "No API Basic auth is sent. Synthetic unknown event types validate provider signatures and inbox deduplication only. Real payment webhooks must come from a real provider transaction.",
+      "item": [
+        {
+          "name": "Paystack - Signed No-op Inbox Event (Replay for Deduplication)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-paystack-signature",
+                "value": ""
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"event\":\"postman.inbox.test\",\"data\":{\"id\":\"sample\",\"status\":\"received\"}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/webhooks/paystack",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "webhooks",
+                "paystack"
+              ]
+            },
+            "description": "Uses a correctly signed, allow-listed no-op event. It tests signature authentication, durable inbox acknowledgement, duplicate handling, and worker processing only. It cannot settle a payment. Set paystackSecretKey equal to the application PAYSTACK_SECRET_KEY. Run repeatedly or use Runner; the deterministic object/event/status deduplication key should keep one inbox effect.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const secret = pm.environment.get('paystackSecretKey');",
+                  "if (!secret) throw new Error('Set the local Postman secret variable paystackSecretKey.');",
+                  "let sampleId = pm.environment.get('webhookSampleId');",
+                  "if (!sampleId) { sampleId = pm.variables.replaceIn('{{$guid}}').replaceAll('-', ''); pm.environment.set('webhookSampleId', sampleId); }",
+                  "const body = JSON.stringify({ event: 'postman.inbox.test', data: { id: sampleId, status: 'received' } });",
+                  "pm.request.body.update({ mode: 'raw', raw: body });",
+                  "const signature = CryptoJS.HmacSHA512(body, secret).toString(CryptoJS.enc.Hex);",
+                  "pm.request.headers.upsert({ key: 'x-paystack-signature', value: signature });"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Signed webhook durably accepted', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Paystack - Reject Invalid Signature",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-paystack-signature",
+                "value": "invalid-signature"
+              }
+            ],
+            "url": "{{baseUrl}}/webhooks/paystack",
+            "description": "Expected 401. Invalid signatures must be rejected before inbox insertion.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"event\":\"postman.inbox.test\",\"data\":{\"id\":\"invalid-signature-case\",\"status\":\"received\"}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Invalid Paystack signature rejected', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Flutterwave - Signed No-op Inbox Event (Replay for Deduplication)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "verif-hash",
+                "value": "{{flutterwaveWebhookSecretHash}}"
+              }
+            ],
+            "url": "{{baseUrl}}/webhooks/flutterwave",
+            "description": "V3 verifier compares verif-hash with the configured dashboard webhook secret hash. This unknown no-op event tests durable inbox/dedup only; it cannot settle a payment. Run it repeatedly or use Runner; the deterministic event/object/status deduplication key should keep one inbox effect.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"event\":\"postman.inbox.test\",\"data\":{\"id\":\"sample\",\"status\":\"received\"}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.environment.get('flutterwaveWebhookSecretHash')) throw new Error('Set flutterwaveWebhookSecretHash to the app FLUTTERWAVE_V3_WEBHOOK_SECRET_HASH.');",
+                  "let sampleId = pm.environment.get('webhookSampleId');",
+                  "if (!sampleId) { sampleId = pm.variables.replaceIn('{{$guid}}').replaceAll('-', ''); pm.environment.set('webhookSampleId', sampleId); }",
+                  "pm.request.body.update({ mode: 'raw', raw: JSON.stringify({ event: 'postman.inbox.test', data: { id: sampleId, status: 'received' } }) });"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Authenticated Flutterwave webhook acknowledged', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Flutterwave - Reject Invalid Signature",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "verif-hash",
+                "value": "invalid-signature"
+              }
+            ],
+            "url": "{{baseUrl}}/webhooks/flutterwave",
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"event\":\"postman.inbox.test\",\"data\":{\"id\":\"invalid-signature-case\",\"status\":\"received\"}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Invalid Flutterwave hash rejected', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Stripe - Signed No-op Inbox Event (Replay for Deduplication)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Stripe-Signature",
+                "value": ""
+              }
+            ],
+            "url": "{{baseUrl}}/webhooks/stripe",
+            "description": "Signs the untouched raw body using the Stripe webhook signing secret. customer.created is intentionally ignored by the payment domain; this tests Stripe signature/inbox deduplication only. Use Postman Runner with 100 iterations to replay the same Stripe event ID and observe deduplication.",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const secret = pm.environment.get('stripeWebhookSigningSecret');",
+                  "if (!secret) throw new Error('Set stripeWebhookSigningSecret to the Stripe endpoint whsec_ signing secret (not the API key).');",
+                  "let sampleId = pm.environment.get('webhookSampleId');",
+                  "if (!sampleId) { sampleId = pm.variables.replaceIn('{{$guid}}').replaceAll('-', ''); pm.environment.set('webhookSampleId', sampleId); }",
+                  "const timestamp = Math.floor(Date.now() / 1000);",
+                  "const eventId = 'evt_postman_' + sampleId;",
+                  "const body = JSON.stringify({ id: eventId, object: 'event', api_version: '2026-09-30.endive', created: timestamp, livemode: false, type: 'customer.created', data: { object: { id: 'cus_postman_sample', object: 'customer' } } });",
+                  "pm.request.body.update({ mode: 'raw', raw: body });",
+                  "const signature = CryptoJS.HmacSHA256(timestamp + '.' + body, secret).toString(CryptoJS.enc.Hex);",
+                  "pm.request.headers.upsert({ key: 'Stripe-Signature', value: 't=' + timestamp + ',v1=' + signature });"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Authenticated Stripe webhook acknowledged', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Stripe - Reject Invalid Signature",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Stripe-Signature",
+                "value": "t=1,v1=bad"
+              }
+            ],
+            "url": "{{baseUrl}}/webhooks/stripe",
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"id\":\"evt_invalid\",\"object\":\"event\",\"type\":\"customer.created\",\"data\":{\"object\":{\"id\":\"cus_invalid\",\"object\":\"customer\"}}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Invalid Stripe signature rejected', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Operations and Observability",
+      "description": "Metrics access uses the dedicated monitoring account.",
+      "item": [
+        {
+          "name": "Read Prometheus Metrics (Monitoring Role)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "text/plain"
+              }
+            ],
+            "url": "{{baseUrl}}/actuator/prometheus",
+            "description": "Inspect provider request counters, webhook receipt/duplicate counters, and inbox/outbox pending/dead-letter gauges. This endpoint is restricted to MONITORING or ADMIN.",
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "{{apiMonitoringUsername}}",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{apiMonitoringPassword}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Read Local Payment State",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/payments/{{reference}}",
+            "description": "Uses the customer API account. Shows payment status, provider transaction ID, fees, and refundedKobo after real provider activity."
+          },
+          "response": []
+        }
+      ]
     }
-  ]
+  ],
+  "auth": {
+    "type": "basic",
+    "basic": [
+      {
+        "key": "username",
+        "value": "{{apiUsername}}",
+        "type": "string"
+      },
+      {
+        "key": "password",
+        "value": "{{apiPassword}}",
+        "type": "string"
+      }
+    ]
+  }
 }

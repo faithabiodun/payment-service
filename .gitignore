@@ -32,6 +32,7 @@ build/
 ### VS Code ###
 .vscode/
 .env
+*.postman_environment.local.json
 
 # Local-only test fixtures or exported sample data
 /sample-data/
