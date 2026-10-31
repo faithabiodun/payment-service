@@ -13,6 +13,8 @@ import io.github.resilience4j.retry.Retry;
 import io.github.resilience4j.retry.RetryConfig;
 import io.github.resilience4j.retry.RetryRegistry;
 import org.springframework.stereotype.Component;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 
 import java.time.Duration;
 import java.util.function.Supplier;
@@ -24,9 +26,11 @@ public class ProviderCallExecutor {
     private final RetryRegistry retries;
     private final BulkheadRegistry bulkheads;
     private final ProviderFailureClassifier classifier;
+    private final MeterRegistry meters;
 
-    public ProviderCallExecutor(ProviderFailureClassifier classifier) {
+    public ProviderCallExecutor(ProviderFailureClassifier classifier, MeterRegistry meters) {
         this.classifier = classifier;
+        this.meters = meters;
         CircuitBreakerConfig breakerConfig = CircuitBreakerConfig.custom()
                 .slidingWindowSize(10).minimumNumberOfCalls(5).failureRateThreshold(50)
                 .waitDurationInOpenState(Duration.ofSeconds(30))
@@ -51,13 +55,33 @@ public class ProviderCallExecutor {
                 operation.retryAllowed()
                         ? retry.executeSupplier(call)
                         : call.get()));
+        Timer.Sample sample = Timer.start(meters);
         try {
-            return guarded.get();
+            T result = guarded.get();
+            record(sample, provider, operation, "success");
+            return result;
         } catch (CallNotPermittedException failure) {
+            record(sample, provider, operation, "rejected");
             throw new ProviderCommunicationException("Provider circuit is open for " + provider, failure);
         } catch (io.github.resilience4j.bulkhead.BulkheadFullException failure) {
+            record(sample, provider, operation, "rejected");
             throw new ProviderCommunicationException("Provider concurrency limit reached for " + provider, failure);
+        } catch (RuntimeException failure) {
+            record(sample, provider, operation, "error");
+            throw failure;
         }
+    }
+
+    private void record(Timer.Sample sample, PaymentProviderType provider, ProviderCallOperation operation,
+                        String outcome) {
+        var timer = Timer.builder("payment.provider.request.duration")
+                .tag("provider", provider.name().toLowerCase())
+                .tag("operation", operation.name().toLowerCase())
+                .tag("outcome", outcome)
+                .register(meters);
+        sample.stop(timer);
+        meters.counter("payment.provider.requests", "provider", provider.name().toLowerCase(),
+                "operation", operation.name().toLowerCase(), "outcome", outcome).increment();
     }
 
     public void validateAvailable(PaymentProviderType provider) {

@@ -4,6 +4,7 @@ import com.faith.pay.provider.core.PaymentProviderType;
 import com.faith.pay.webhook.ProviderWebhookEnvelopeParser;
 import com.faith.pay.webhook.WebhookInboxRepository;
 import com.faith.pay.webhook.WebhookInboxService;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.ObjectMapper;
 
@@ -55,7 +56,8 @@ class WebhookInboxTests {
     @Test
     void authenticatedReceiptIsStoredAndRepositoryDuplicateResultIsReturned() {
         var repository = mock(WebhookInboxRepository.class);
-        var inbox = new WebhookInboxService(new ProviderWebhookEnvelopeParser(new ObjectMapper()), repository);
+        var meters = new SimpleMeterRegistry();
+        var inbox = new WebhookInboxService(new ProviderWebhookEnvelopeParser(new ObjectMapper()), repository, meters);
         byte[] payload = "{\"event\":\"charge.completed\",\"data\":{\"id\":123}}".getBytes();
         when(repository.insert(eq(PaymentProviderType.PAYSTACK), isNull(), anyString(), eq("charge.completed"), anyString()))
                 .thenReturn(false);
@@ -65,5 +67,6 @@ class WebhookInboxTests {
         assertThat(inserted).isFalse();
         verify(repository).insert(eq(PaymentProviderType.PAYSTACK), isNull(), anyString(),
                 eq("charge.completed"), eq(new String(payload, java.nio.charset.StandardCharsets.UTF_8)));
+        assertThat(meters.counter("payment.webhook.duplicate", "provider", "paystack").count()).isEqualTo(1);
     }
 }

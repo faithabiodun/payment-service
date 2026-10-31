@@ -406,3 +406,99 @@ Operational status says whether a payment/refund is pending or complete; the led
 ### What you should be able to explain as a backend developer
 
 Stripe Checkout is the customer-facing hosted page; the PaymentIntent is the underlying financial lifecycle. The adapter maps Stripe's richer states into our neutral payment states. The raw webhook is authenticated with Stripe's SDK and current provider data is re-queried before a shared, locked settlement. The local idempotency key protects our API, while sending that key to Stripe protects Stripe's POST operation from duplicate creation.
+
+## Checkpoint 12 — Production engineering
+
+### What problem are we solving?
+
+The payment and accounting paths are now shared and recoverable, but a real service also needs controlled access, useful operating signals, and a repeatable way to build and run it. A `200 OK` says one HTTP request completed; it does not say payments are settling, webhooks are being processed, or secrets are protected.
+
+### Mental model
+
+```text
+customer/admin --credentials--> Spring Security --> API controller
+provider ---------------------> signature check --> durable inbox
+provider calls --> bounded metrics --> Prometheus --> Grafana
+PostgreSQL queues --> backlog gauges -----------^
+source commit --> GitHub Actions --> tests --> Docker image
+```
+
+### Concepts before implementation
+
+* **Authentication** asks who made the request. **Authorization** asks whether that identity may do this operation. The filter chain in `SecurityConfig` authenticates API requests; method security on `RefundController.refund` separately requires the `ADMIN` role.
+* **Least privilege** grants only the access a role needs. A `CUSTOMER` can call authenticated payment APIs, but cannot initiate a refund; refund access belongs to an `ADMIN` for this initial bootstrap.
+* **Metrics** count and time behavior so operators can detect slow providers or stuck queues. Metric labels must be bounded: provider, operation and outcome have a small fixed set. A payment reference is effectively unlimited distinct values and must not be a metric label.
+* **Structured logs** put fields in machine-readable JSON. The `RED` view asks about request rate, error rate, and duration. An **SLI** is a measured reliability signal (for example successful payment verification rate); an **SLO** is the target for that signal over a time window. This repository exposes useful measurements but does not define business-approved SLO targets or paging alerts.
+* **Health checks** report whether the process is ready/alive. **CI** builds and checks a change repeatedly; it does not deploy it. The existing workflow creates/publishes images on main/tag pushes, but has no deployment job.
+* **A container image** is the built, versionable application package; a container runs that image with environment configuration. PostgreSQL, Prometheus and Grafana keep persistent data in named volumes. Secrets are passed at runtime, never copied into the image.
+
+### Existing files and the change
+
+* `src/main/java/com/faith/pay/config/SecurityConfig.java` previously allowed every request (`anyRequest().permitAll()`). It now uses stateless HTTP Basic, authenticates all application APIs, and exposes only signed webhook routes plus health/info without a login. The webhook controller remains responsible for provider-specific cryptographic checks before inbox insertion.
+* `src/main/java/com/faith/pay/refund/RefundController.java` uses `@PreAuthorize("hasRole('ADMIN')")`. Authentication alone is not enough to perform a money-moving refund.
+* Environment credentials are `API_CUSTOMER_USERNAME`, `API_CUSTOMER_PASSWORD`, `API_ADMIN_USERNAME`, and `API_ADMIN_PASSWORD`. No default password is embedded. If a username is provided without its password (or vice versa), startup fails. With no accounts configured, the API is inaccessible while health and authenticated webhooks continue to work. This is a bootstrap for development/internal API access, not a customer identity or tenant-authorization system.
+* `ProviderCallExecutor` records `payment.provider.requests` and `payment.provider.request.duration`, tagged only with provider, operation, and outcome. `WebhookInboxService` counts accepted and duplicate messages. `PaymentQueueMetrics` reads pending and dead-letter counts from PostgreSQL for webhook inbox and outbox queues. Database-backed gauges are sampled when scraped, rather than pretending a process-local counter is durable.
+* `CorrelationIdFilter` puts a validated/generated `X-Correlation-ID` in the SLF4J MDC and response. Spring Boot's Logstash JSON formatter includes MDC fields, so the ID appears in structured logs. It is useful for following a request but intentionally is not a metric label. [Spring Boot structured logging](https://docs.spring.io/spring-boot/reference/features/logging.html)
+* `pom.xml` adds the runtime `micrometer-registry-prometheus` exporter managed by Spring Boot. `application.yaml` exposes `health`, `info`, and `prometheus`, enables health probes, and sets the application metric tag. `/actuator/prometheus` should only be reachable from the monitoring network in a real deployment.
+* `compose.yaml` runs PostgreSQL, the app, Prometheus and Grafana. `monitoring/prometheus.yml` scrapes the app. Configure the admin/customer API credentials and `GRAFANA_ADMIN_PASSWORD` in the local `.env`; `.env` is ignored by Git and `.dockerignore` prevents copying it into the image. The Compose service receives provider keys only as runtime environment variables.
+* `Dockerfile` builds with Java 21, copies the packaged JAR into a smaller Java runtime image, and runs as the non-root `spring` user.
+* `.github/workflows/ci-cd.yml` runs Maven `verify` (including Testcontainers tests) on GitHub's Docker-capable runner and validates the image. On main/tag pushes it publishes to GHCR. It does not automatically deploy. Database changes use Flyway roll-forward migrations; a rollback of application code can fail if it expects an older schema, so migrations should be backward-compatible during rollout.
+
+### Transaction boundaries and failure scenarios
+
+Security checks run before the controller. A webhook route is public at HTTP authentication level because the provider cannot log into our app; its own signature is checked before the inbox transaction commits. The inbox insert still commits before `200` is returned.
+
+Provider metrics are observations around `ProviderCallExecutor.execute`; they do not alter retry policy or financial transaction boundaries. Queue depth metrics issue read-only count queries when Prometheus scrapes. If Prometheus is unavailable, payments and database queue processing continue; only dashboards lose fresh samples. If the DB is unavailable, the application cannot durably accept or process financial work and should report unhealthy.
+
+An API request without credentials receives `401`; an authenticated customer refund request receives `403`. No secret is logged by these changes. The webhook inbox retains raw bodies for recovery, so payload access and retention must be controlled; a retention/redaction policy is still an operational follow-up. Never put raw card data in this service. Use provider-hosted payment collection. Run Basic authentication only over HTTPS, rotate environment credentials, restrict access to Actuator/Prometheus at the network boundary, and use a managed secrets store in deployment. Rate limiting and a durable customer identity/tenant model are not implemented in this repository and should be supplied by an API gateway/identity integration before public multi-customer production use.
+
+### Tests and exercise
+
+`ApiSecurityTests` proves anonymous refund requests get `401` and a `CUSTOMER` cannot perform an admin refund (`403`). `ProviderResilienceTests` verifies bounded operation outcomes without exposing references. `WebhookInboxTests` verifies duplicate counting. The existing PostgreSQL tests cover persistent queue behavior and the GitHub workflow runs the full suite with Docker.
+
+**Exercise:** Should a failed Prometheus scrape cause a successful payment transaction to roll back?
+
+**Solution:** No. A scrape is an observability read. Payment state, ledger postings, and outbox records commit according to their own database transaction; monitoring failure affects visibility, not the financial decision.
+
+### What you should be able to explain as a backend developer
+
+Authentication identifies a caller and authorization restricts operations by role. Webhooks use provider signatures rather than customer login. Metrics use bounded labels; queue gauges come from durable database state. Docker packages the app, Compose configures the local operating stack, and CI verifies the same build without deploying it. Secrets arrive through the environment and never belong in Git or image layers.
+
+## What I Can Now Explain as a Backend Engineer
+
+Use these short answers as a starting point; explain them in your own words and point to the files named above.
+
+| Topic | Interview-style answer | Codebase anchor |
+|---|---|---|
+| Provider-neutral architecture | Shared payment rules depend on normalized ports; adapters translate each provider's vocabulary at the edge. This prevents three divergent settlement/refund implementations. | `provider/core`, `PaymentSettlementService` |
+| Dependency inversion / hexagonal architecture | Application rules depend on interfaces the application owns. Provider HTTP clients implement those ports; provider DTOs do not leak into the domain. | `PaymentProviderRegistry`, adapter packages |
+| Provider differences | Paystack and Flutterwave V3 use their own REST schemas and webhook protocols. Stripe Checkout Sessions wrap a PaymentIntent lifecycle and use Stripe event/signature semantics. Normalize only the concepts all adapters actually share. | `provider/paystack`, `provider/flutterwave`, `provider/stripe` |
+| Local/provider idempotency | The local key prevents duplicate work in this service; provider idempotency prevents duplicate POST effects at a provider when its API supports it. Both do different jobs. | payment/refund services and adapter request options |
+| Safe routing | Save the chosen provider on an attempt before calling it. An ambiguous timeout stays with that provider; only a new attempt can choose another. | `ProviderRoutingPolicy`, `Payment.provider` |
+| Webhook authentication | Preserve raw bytes and authenticate with that provider's protocol before trusting or storing the event. Then verify critical payment data against the provider. | webhook controllers and provider verifiers |
+| Durable inbox / exactly-once effect | Delivery is at least once. A unique deduplication key plus locked state transition makes the financial effect happen once. Store before acknowledging; workers can recover after a crash. | `WebhookInboxService`, `WebhookInboxWorker`, V9 |
+| Transactional outbox | Write the financial state and an outbox record in the same database transaction. A worker publishes afterward; a send failure cannot roll back a payment already committed. | `OutboxEventStore`, `OutboxWorker`, V10 |
+| External-call boundaries | Reserve and commit local intent, call the provider outside a DB transaction, then lock and apply the result in a new transaction. This avoids holding row locks over uncertain network time. | payment/refund application services |
+| Retry/backoff/circuit breaker | Retry transient safe reads with exponential randomized delay. Stop sending calls to an unhealthy provider while its circuit is open. Never blindly replay an ambiguous money-moving POST. | `ProviderCallExecutor`, `ProviderFailureClassifier` |
+| Ambiguous network failure | A timeout only says we did not receive a response; it does not prove the provider did nothing. Preserve uncertainty and reconcile with the same provider. | provider error handling and reconciliation |
+| Reconciliation | Query the provider saved on an attempt, compare reference/amount/currency/state, repair only a matching local lag, and record contradictions for review. | `PaymentReconciler`, `RefundReconciler`, V11 |
+| Pessimistic locking / refund invariant | Lock the payment row before computing remaining refundable capacity. Concurrent refund requests serialize, so successful refunds cannot exceed the captured amount. | `PaymentRepository`, `Payment.reserveRefund` |
+| `SKIP LOCKED` workers | A worker claims rows that are ready and unlocked, leaving rows held by other workers alone. Several instances can claim different inbox/outbox work without waiting on the same row. | inbox/outbox repositories |
+| Ledger basics | Each journal has debits equal to credits; postings are immutable. State transitions and journals commit atomically, while account balance is derived by summing postings. | `LedgerPostingService`, V12 |
+| Observability | Structured, low-cardinality counters/timers show provider health and database-backed gauges show durable backlog. Logs/traces add context but must avoid secrets and sensitive payment data. | `ProviderCallExecutor`, `PaymentQueueMetrics` |
+| Security | Webhooks are publicly routable but require signatures. API operations require a caller identity, refunds require `ADMIN`, and raw PAN/CVV never enters this service. | `SecurityConfig`, `RefundController` |
+| Docker and CI/CD | Docker builds a non-root Java runtime image. CI tests and builds/publishes an artifact; deployment and safe schema rollout are a separate controlled stage. | `Dockerfile`, `compose.yaml`, `.github/workflows/ci-cd.yml` |
+| Concurrency and invariant tests | Use PostgreSQL/Testcontainers for locks and constraints, WireMock for provider failures, and assert invariants directly rather than relying only on happy-path status codes. | `*PostgresIntegrationTests`, adapter tests |
+| Modular monolith | Keep modules separated by domain boundaries while they share one deployable process and database. Split only when ownership, scaling, or operational evidence justifies distributed-system costs. | package structure under `com.faith.pay` |
+
+### Final interview prompts
+
+1. **Why is a timeout not a failed payment?** The remote request may have succeeded even though its response was lost; retrying blindly can double-charge. Reconcile the persisted provider attempt.
+2. **How do you make a webhook safe under duplicate delivery?** Authenticate, insert into a durable inbox with a provider-scoped unique deduplication key, then use locked idempotent domain transitions.
+3. **How do you stop two refunds from exceeding a payment?** Lock the payment row, check remaining capacity, reserve atomically, and enforce database/domain invariants.
+4. **What does the ledger add beyond `SUCCESS`?** It records balanced value movements as immutable history and allows balances to be derived and audited.
+5. **Why not make each provider its own microservice now?** The modular monolith already isolates provider adapters while keeping settlement/ledger transactions atomic. A service split would introduce network and distributed-transaction failure modes without a demonstrated need.
+
+### Current documentation checked for this checkpoint
+
+Spring Boot documents Micrometer registry auto-configuration and Prometheus scraping at `/actuator/prometheus`; the exporter dependency and endpoint exposure are both required. [Spring Boot metrics reference](https://docs.spring.io/spring-boot/reference/actuator/metrics.html), [Prometheus endpoint requirements](https://docs.spring.io/spring-boot/4.2/reference/actuator/endpoints.html). The current local Compose pins use Prometheus 3.14.0 and Grafana 13.2.4, checked against their [official Prometheus releases](https://github.com/prometheus/prometheus/releases) and [Grafana releases](https://github.com/grafana/grafana/releases).

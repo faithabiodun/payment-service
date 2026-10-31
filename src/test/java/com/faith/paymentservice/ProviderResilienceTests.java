@@ -2,6 +2,7 @@ package com.faith.paymentservice;
 
 import com.faith.pay.error.ProviderCommunicationException;
 import com.faith.pay.provider.core.*;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
@@ -37,7 +38,7 @@ class ProviderResilienceTests {
 
     @Test
     void retriesReadOnlyCallsWithTransientFailuresUntilSuccess() {
-        var calls = new ProviderCallExecutor(new ProviderFailureClassifier());
+        var calls = new ProviderCallExecutor(new ProviderFailureClassifier(), new SimpleMeterRegistry());
         var attempts = new AtomicInteger();
         String result = calls.execute(PaymentProviderType.STRIPE, ProviderCallOperation.READ_ONLY, () -> {
             if (attempts.incrementAndGet() < 3) {
@@ -52,7 +53,7 @@ class ProviderResilienceTests {
 
     @Test
     void doesNotRetryMoneyMovingPostsEvenWhenProviderReturns5xx() {
-        var calls = new ProviderCallExecutor(new ProviderFailureClassifier());
+        var calls = new ProviderCallExecutor(new ProviderFailureClassifier(), new SimpleMeterRegistry());
         var attempts = new AtomicInteger();
 
         assertThatThrownBy(() -> calls.execute(PaymentProviderType.FLUTTERWAVE,
@@ -66,7 +67,7 @@ class ProviderResilienceTests {
 
     @Test
     void circuitOpensAfterRepeatedTransientMoneyCallFailures() {
-        var calls = new ProviderCallExecutor(new ProviderFailureClassifier());
+        var calls = new ProviderCallExecutor(new ProviderFailureClassifier(), new SimpleMeterRegistry());
         var attempts = new AtomicInteger();
         for (int i = 0; i < 5; i++) {
             assertThatThrownBy(() -> calls.execute(PaymentProviderType.PAYSTACK,

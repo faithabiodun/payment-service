@@ -17,11 +17,24 @@ spring:
   flyway:
     enabled: true
 
+logging:
+  structured:
+    format:
+      console: logstash
+
 management:
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never
   endpoints:
     web:
       exposure:
-        include: health,info,flyway
+        include: health,info,prometheus
+  metrics:
+    tags:
+      application: ${spring.application.name}
 
 paystack:
   base-url: https://api.paystack.co

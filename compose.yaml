@@ -26,6 +26,18 @@ services:
       DB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in your environment}
       PAYSTACK_SECRET_KEY: ${PAYSTACK_SECRET_KEY:?Set PAYSTACK_SECRET_KEY to a Paystack test secret}
       PAYSTACK_CALLBACK_URL: ${PAYSTACK_CALLBACK_URL:-http://localhost:8080/api/v1/payments/callback}
+      API_CUSTOMER_USERNAME: ${API_CUSTOMER_USERNAME:?Set API_CUSTOMER_USERNAME}
+      API_CUSTOMER_PASSWORD: ${API_CUSTOMER_PASSWORD:?Set API_CUSTOMER_PASSWORD}
+      API_ADMIN_USERNAME: ${API_ADMIN_USERNAME:?Set API_ADMIN_USERNAME}
+      API_ADMIN_PASSWORD: ${API_ADMIN_PASSWORD:?Set API_ADMIN_PASSWORD}
+      FLUTTERWAVE_V3_SECRET_KEY: ${FLUTTERWAVE_V3_SECRET_KEY:-}
+      FLUTTERWAVE_V3_WEBHOOK_SECRET_HASH: ${FLUTTERWAVE_V3_WEBHOOK_SECRET_HASH:-}
+      FLUTTERWAVE_V4_CLIENT_ID: ${FLUTTERWAVE_V4_CLIENT_ID:-}
+      FLUTTERWAVE_V4_CLIENT_SECRET: ${FLUTTERWAVE_V4_CLIENT_SECRET:-}
+      FLUTTERWAVE_V4_WEBHOOK_SECRET_HASH: ${FLUTTERWAVE_V4_WEBHOOK_SECRET_HASH:-}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      PAYMENT_DEFAULT_PROVIDER: ${PAYMENT_DEFAULT_PROVIDER:-PAYSTACK}
       RECONCILIATION_PAYMENT_STALE_AFTER: ${RECONCILIATION_PAYMENT_STALE_AFTER:-PT10M}
       RECONCILIATION_ABANDON_AFTER: ${RECONCILIATION_ABANDON_AFTER:-PT24H}
       RECONCILIATION_REFUND_STALE_AFTER: ${RECONCILIATION_REFUND_STALE_AFTER:-PT10M}
@@ -34,5 +46,29 @@ services:
     ports:
       - "8080:8080"
 
+  prometheus:
+    image: prom/prometheus:v3.14.0
+    depends_on:
+      - app
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - payment-service-prometheus:/prometheus
+
+  grafana:
+    image: grafana/grafana:13.2.4
+    depends_on:
+      - prometheus
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?Set GRAFANA_ADMIN_PASSWORD}
+    volumes:
+      - payment-service-grafana:/var/lib/grafana
+
 volumes:
   payment-service-postgres:
+  payment-service-prometheus:
+  payment-service-grafana:

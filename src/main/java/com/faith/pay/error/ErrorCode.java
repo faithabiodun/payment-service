@@ -38,6 +38,8 @@ public enum ErrorCode {
 
     PROVIDER_RESPONSE_INVALID,
 
+    ACCESS_DENIED,
+
     BAD_REQUEST,
 
     INVALID_WEBHOOK_PAYLOAD,

@@ -6,6 +6,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.WebRequest;
@@ -29,6 +30,11 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
         log.error("Payment provider request failed", e);
         return error(HttpStatus.SERVICE_UNAVAILABLE, ErrorCode.PROVIDER_UNAVAILABLE,
                 "Payment provider request failed");
+    }
+
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<ApiError> accessDenied(AccessDeniedException e) {
+        return error(HttpStatus.FORBIDDEN, ErrorCode.ACCESS_DENIED, "You are not allowed to perform this operation");
     }
 
     @ExceptionHandler(Exception.class)

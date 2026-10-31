@@ -6,6 +6,7 @@ import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.security.access.prepost.PreAuthorize;
 
 @RestController
 @RequestMapping("/api/v1/payments/{paymentReference}/refunds")
@@ -18,6 +19,7 @@ public class RefundController {
     }
 
     @PostMapping
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<RefundResponse> refund(
             @PathVariable String paymentReference,
             @RequestHeader("Idempotency-Key") String idempotencyKey,
