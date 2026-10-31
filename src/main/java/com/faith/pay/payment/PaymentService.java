@@ -17,6 +17,8 @@ public class PaymentService {
 
     private final PaymentProviderRegistry providers;
 
+    private final ProviderRoutingPolicy routingPolicy;
+
     private final PaymentSettlementService settlement;
 
 
@@ -24,6 +26,7 @@ public class PaymentService {
             PaymentCommandService commands,
             PaymentRepository payments,
             PaymentProviderRegistry providers,
+            ProviderRoutingPolicy routingPolicy,
             PaymentSettlementService settlement
     ) {
 
@@ -32,6 +35,8 @@ public class PaymentService {
         this.payments = payments;
 
         this.providers = providers;
+
+        this.routingPolicy = routingPolicy;
 
         this.settlement = settlement;
     }
@@ -49,8 +54,7 @@ public class PaymentService {
         }
 
 
-        PaymentProviderType selectedProvider = request.provider() == null
-                ? PaymentProviderType.PAYSTACK : request.provider();
+        PaymentProviderType selectedProvider = routingPolicy.choose(request.provider());
         PaymentProvider provider = providers.get(selectedProvider);
         provider.validateConfiguration();
         PaymentReservation reservation = commands.reserve(request.orderId(), idempotencyKey, selectedProvider);

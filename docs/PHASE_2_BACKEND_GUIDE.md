@@ -164,11 +164,43 @@ Refund requests use the persisted PaymentIntent ID and carry a separate local re
 - Refund create and payment create currently translate Stripe SDK exceptions to provider-unavailable errors conservatively. Checkpoint 9 will classify permanent 4xx/auth errors separately from ambiguous connection failures.
 - Durable inbox storage is not implemented yet; the webhook path is synchronous. Checkpoint 7 adds durable acknowledgement and worker recovery.
 - Payment reconciliation is still Paystack-specific in this repository. Provider-aware reconciliation is checkpoint 10.
-- No Stripe secret credentials were supplied for this checkpoint, so automated tests use WireMock and local signatures. To use Stripe test mode, fill `STRIPE_SECRET_KEY` with an `sk_test_...` key and `STRIPE_WEBHOOK_SECRET` with the endpoint's `whsec_...` signing secret in the ignored `.env`; never commit either value.
+- Stripe credentials are configured locally through `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` in the ignored `.env`. Automated adapter tests still use WireMock and local signatures so they are deterministic and never charge a real account. Never commit either value.
 
 ### Tests and exercise
 
 `StripePaymentProviderWireMockTests` verifies hosted Session creation, amount/currency/reference fields, Stripe idempotency headers, Session-to-PaymentIntent verification, refund creation, refund retrieval and refund discovery. `StripeStateMappingTests` verifies lifecycle mappings and unknown values. `StripeWebhookServiceTests` proves invalid signatures do not reach the handler and a valid Checkout event is re-verified before it reaches the shared payment processor.
+
+## Checkpoint 6 — Provider routing
+
+### What problem does routing solve?
+
+One payment attempt must have one provider owner. If a request to Stripe times out after Stripe may have accepted it, changing that same attempt to Paystack could create a second charge. Keep the attempt attached to Stripe and investigate with Stripe. A deliberate new attempt can choose another provider only after confirming the previous attempt did not succeed.
+
+### Routing policy and current behavior
+
+`InitializePaymentRequest.provider` is optional. `ConfiguredProviderRoutingPolicy` uses the requested provider when present; otherwise it uses `payment.routing.default-provider`, configured from `PAYMENT_DEFAULT_PROVIDER` and defaulting to `PAYSTACK` for backwards compatibility. This is deterministic and deliberately simple; it does not silently switch providers after a timeout.
+
+`PaymentService.initialize` selects and checks the provider before calling `PaymentCommandService.reserve`. The reservation writes the selected provider to `Payment.provider` in the same database transaction as the attempt. `PaymentService` then calls the provider outside that transaction. Later verification and webhooks use the stored provider, not a fresh routing decision.
+
+```text
+TX 1: reserve order + local reference + idempotency key + provider; COMMIT
+NO TX: initialize at the selected provider
+TX 2: save provider checkout URL/session identity; COMMIT
+```
+
+Reusing an idempotency key with a different provider is rejected by `PaymentCommandService`. Repeat the same provider choice for retries. To deliberately try another provider, use a new idempotency key and create a new attempt after confirming the first attempt did not succeed.
+
+### Credentials and testing
+
+`application.yaml` maps Stripe's API key and webhook signing key from `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET`. Both variable names are present in the ignored local `.env`; values must not be logged, copied into source, or committed. Routing unit tests need no network credentials. Provider WireMock tests use fake keys and a local HTTP server, so they do not make a real charge.
+
+**Exercise:** Stripe initialization times out after sending a request. Should the service retry the same attempt through Flutterwave?
+
+**Solution:** No. Stripe may have created a Checkout Session. Keep the attempt owned by Stripe and reconcile with Stripe. If a new attempt is appropriate, create it with a new idempotency key and explicit provider.
+
+### What you should be able to explain as a backend developer
+
+Routing chooses a provider before the external call and persists that choice with the attempt. A network timeout is ambiguous, so it does not authorize provider failover. Idempotency prevents the same local operation from being reused with a different provider, while a genuinely new attempt has its own identity.
 
 **Exercise:** Why does the local payment store both `cs_...` and `pi_...` identifiers?
 

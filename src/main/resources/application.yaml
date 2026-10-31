@@ -57,6 +57,10 @@ stripe:
   callback-url: ${STRIPE_CALLBACK_URL:http://localhost:8080/api/v1/payments/callback}
   cancel-url: ${STRIPE_CANCEL_URL:http://localhost:8080/api/v1/payments/callback}
 
+payment:
+  routing:
+    default-provider: ${PAYMENT_DEFAULT_PROVIDER:PAYSTACK}
+
 reconciliation:
   payment-stale-after: ${RECONCILIATION_PAYMENT_STALE_AFTER:PT10M}
   abandon-after: ${RECONCILIATION_ABANDON_AFTER:PT24H}

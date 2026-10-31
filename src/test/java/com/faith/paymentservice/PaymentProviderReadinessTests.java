@@ -7,6 +7,7 @@ import com.faith.pay.payment.PaymentService;
 import com.faith.pay.payment.PaymentSettlementService;
 import com.faith.pay.payment.dto.InitializePaymentRequest;
 import com.faith.pay.provider.core.PaymentProviderRegistry;
+import com.faith.pay.provider.core.ConfiguredProviderRoutingPolicy;
 import com.faith.pay.provider.core.PaymentProviderType;
 import com.faith.pay.provider.stripe.StripePaymentProvider;
 import com.stripe.StripeClient;
@@ -24,6 +25,7 @@ class PaymentProviderReadinessTests {
                 StripeClient.builder().setApiKey("sk_test_not_used").build(),
                 new StripeProperties("", "", "https://api.stripe.com", "http://localhost/success", "http://localhost/cancel"));
         var service = new PaymentService(commands, mock(com.faith.pay.payment.PaymentRepository.class), registry,
+                new ConfiguredProviderRoutingPolicy(PaymentProviderType.PAYSTACK),
                 mock(PaymentSettlementService.class));
         when(registry.get(PaymentProviderType.STRIPE)).thenReturn(stripe);
 
