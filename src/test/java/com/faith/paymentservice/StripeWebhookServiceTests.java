@@ -10,6 +10,7 @@ import com.faith.pay.webhook.StripePaymentWebhookProcessor;
 import com.faith.pay.webhook.StripeRefundWebhookProcessor;
 import com.faith.pay.webhook.StripeWebhookController;
 import com.faith.pay.webhook.StripeWebhookService;
+import com.faith.pay.webhook.WebhookInboxService;
 import com.stripe.model.Event;
 import com.stripe.net.Webhook;
 import org.junit.jupiter.api.Test;
@@ -29,13 +30,13 @@ class StripeWebhookServiceTests {
 
     @Test
     void controllerRejectsInvalidStripeSignatureBeforeWebhookProcessing() {
-        var service = mock(StripeWebhookService.class);
-        var controller = new StripeWebhookController(new StripeWebhookVerifier(properties()), service);
+        var inbox = mock(WebhookInboxService.class);
+        var controller = new StripeWebhookController(new StripeWebhookVerifier(properties()), inbox);
 
         var response = controller.receive("{}".getBytes(StandardCharsets.UTF_8), "t=1,v1=invalid");
 
         assertThat(response.getStatusCode().value()).isEqualTo(400);
-        verifyNoInteractions(service);
+        verifyNoInteractions(inbox);
     }
 
     @Test

@@ -9,17 +9,17 @@ public class PaystackWebhookController {
 
     private final WebhookVerifier verifier;
 
-    private final WebhookService service;
+    private final WebhookInboxService inbox;
 
 
     public PaystackWebhookController(
             WebhookVerifier verifier,
-            WebhookService service
+            WebhookInboxService inbox
     ) {
 
         this.verifier = verifier;
 
-        this.service = service;
+        this.inbox = inbox;
     }
 
 
@@ -59,18 +59,8 @@ public class PaystackWebhookController {
         }
 
 
-        /*
-         * Processing is deliberately small:
-         *
-         * parse
-         * claim event
-         * lock payment
-         * settle
-         * commit
-         */
-        service.process(
-                rawBody
-        );
+        // Acknowledge only after the authenticated payload is durable in PostgreSQL.
+        inbox.accept(com.faith.pay.provider.core.PaymentProviderType.PAYSTACK, rawBody, null, null);
 
 
         return ResponseEntity

@@ -162,7 +162,7 @@ Refund requests use the persisted PaymentIntent ID and carry a separate local re
 - Invalid/missing `Stripe-Signature` or an unset `STRIPE_WEBHOOK_SECRET` is rejected before service processing.
 - `checkout.session.completed` can still represent an unpaid delayed-method Session. The adapter checks current Stripe state and settles only `succeeded`; Stripe's later asynchronous-success event has a distinct event ID and can settle then.
 - Refund create and payment create currently translate Stripe SDK exceptions to provider-unavailable errors conservatively. Checkpoint 9 will classify permanent 4xx/auth errors separately from ambiguous connection failures.
-- Durable inbox storage is not implemented yet; the webhook path is synchronous. Checkpoint 7 adds durable acknowledgement and worker recovery.
+- Checkpoint 7 adds a PostgreSQL inbox: authenticated payloads are persisted before the controllers return `200`, then a leased worker verifies and applies their business effect.
 - Payment reconciliation is still Paystack-specific in this repository. Provider-aware reconciliation is checkpoint 10.
 - Stripe credentials are configured locally through `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` in the ignored `.env`. Automated adapter tests still use WireMock and local signatures so they are deterministic and never charge a real account. Never commit either value.
 
@@ -201,6 +201,54 @@ Reusing an idempotency key with a different provider is rejected by `PaymentComm
 ### What you should be able to explain as a backend developer
 
 Routing chooses a provider before the external call and persists that choice with the attempt. A network timeout is ambiguous, so it does not authorize provider failover. Idempotency prevents the same local operation from being reused with a different provider, while a genuinely new attempt has its own identity.
+
+## Checkpoint 7 — Durable webhook inbox
+
+### What problem does an inbox solve?
+
+The provider owns delivery, while our database owns payment state. If an HTTP handler does all the work before responding, provider API calls can exceed webhook timeouts. If it responds first and only queues work in memory, a process crash can lose the message. The inbox stores the authenticated message in PostgreSQL before acknowledging it.
+
+### Current flow and files
+
+Each controller keeps its provider's authentication protocol: Paystack HMAC, Flutterwave's configured `verif-hash`, and Stripe's official raw-body verifier. Only after authentication does it call `WebhookInboxService.accept`. `ProviderWebhookEnvelopeParser` extracts event metadata and computes a stable deduplication key. `WebhookInboxRepository` stores the raw JSON text with provider, type and processing metadata. `WebhookInboxWorker` claims rows in batches, invokes the existing provider service, and retries failures.
+
+```text
+NO TX: provider-specific signature verification over raw body
+TX: insert (provider, dedup key, raw payload); COMMIT
+return 200
+
+one SQL claim: SELECT ... FOR UPDATE SKIP LOCKED + lease; COMMIT
+NO TX: provider verification and normalization where needed
+TX: existing provider event claim + settlement/refund transition; COMMIT
+SQL update: mark inbox processed, or schedule retry
+```
+
+The final inbox status update is separate from settlement so a crash can replay the event. Existing event processors deduplicate the financial effect in the same transaction as settlement/refund application. A replay can therefore finish the inbox bookkeeping without settling or refunding twice. Attempt counts fence stale workers; leases recover rows left in `PROCESSING` after a crash.
+
+### Event identity and duplicates
+
+Stripe supplies a stable `evt_...` event ID, which is stored. Flutterwave's current webhook guide shows deduplication by event type, `data.id`, and `data.status`; this app uses that combination and does not label it a provider event ID. Paystack's webhook payload identifies the transaction/refund object; this app deduplicates by event type, data ID and status. When a signed payload has no object ID/status, a SHA-256 of its exact body provides repeat-delivery deduplication. The hash is our key, not an ID claimed to be supplied by the provider.
+
+`V9__create_webhook_inbox.sql` adds a constrained provider/status table with unique `(provider, deduplication_key)` and a partial ready-row index. The worker uses PostgreSQL `SKIP LOCKED` so concurrent instances claim different rows. After eight failed attempts, or an expired lease at the attempt limit, the row moves to `DEAD_LETTER`. The raw payload can contain customer details, so restrict database access and define an appropriate retention policy before production.
+
+### Failure cases
+
+- Invalid signatures are rejected before storage.
+- Duplicate delivery hits the unique key and is acknowledged without adding another row.
+- A crash after `200` leaves a recoverable row.
+- A worker crash leaves a lease that expires and makes the row claimable again.
+- Provider API timeouts are retried with exponential delay and jitter. The existing provider-specific verification and domain idempotency remain in force.
+- Unknown event types are safely acknowledged after durable storage; dispatch treats them as no-op events.
+
+The design follows the providers' own webhook guidance to respond quickly, verify critical Flutterwave transaction values, and tolerate duplicate deliveries: [Paystack Webhooks](https://paystack.com/docs/payments/webhooks/), [Flutterwave Webhooks](https://developer.flutterwave.com/docs/webhooks), [Paystack Webhook Events API](https://paystack.com/docs/api/webhook-events/).
+
+**Exercise:** Why is saving an event ID in memory before returning `200` insufficient?
+
+**Solution:** Memory disappears on process restart. A database commit before the response makes the event recoverable after a crash.
+
+### What you should be able to explain as a backend developer
+
+Webhook delivery is at least once, so I persist the authenticated raw event before acknowledging it, use provider-specific stable deduplication material, claim work with leases and `SKIP LOCKED`, and make the financial effect idempotent. This provides exactly-once business effect without claiming exactly-once delivery.
 
 **Exercise:** Why does the local payment store both `cs_...` and `pi_...` identifiers?
 

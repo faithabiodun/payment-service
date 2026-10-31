@@ -32,15 +32,15 @@ import static org.mockito.Mockito.*;
 class FlutterwaveWebhookServiceTests {
     @Test
     void controllerRejectsInvalidV3HashBeforeWebhookServiceRuns() {
-        var service = mock(FlutterwaveWebhookService.class);
+        var inbox = mock(com.faith.pay.webhook.WebhookInboxService.class);
         var verifier = new FlutterwaveV3WebhookVerifier(new FlutterwaveV3Properties(
                 "https://api.flutterwave.com/v3", "public", "secret", "encryption", "dashboard-hash", "http://localhost"));
-        var controller = new FlutterwaveWebhookController(verifier, service);
+        var controller = new FlutterwaveWebhookController(verifier, inbox);
 
         var response = controller.receive("{}".getBytes(java.nio.charset.StandardCharsets.UTF_8), "wrong-hash");
 
         org.assertj.core.api.Assertions.assertThat(response.getStatusCode().value()).isEqualTo(401);
-        verifyNoInteractions(service);
+        verifyNoInteractions(inbox);
     }
 
     @Test
@@ -115,7 +115,7 @@ class FlutterwaveWebhookServiceTests {
         var processor = new FlutterwaveChargeWebhookProcessor(deduplicator, settlement);
         var verified = new VerifiedPayment(PaymentProviderType.FLUTTERWAVE, "12345", "PAY-FLW-1",
                 ProviderPaymentState.SUCCEEDED, 500_000, "NGN", "card", 7_500L, null);
-        when(deduplicator.claim("FLUTTERWAVE:charge.completed", "12345")).thenReturn(true, false);
+        when(deduplicator.claim("FLUTTERWAVE:charge.completed", "12345:SUCCEEDED")).thenReturn(true, false);
 
         processor.apply("charge.completed", verified, "{}");
         processor.apply("charge.completed", verified, "{}");

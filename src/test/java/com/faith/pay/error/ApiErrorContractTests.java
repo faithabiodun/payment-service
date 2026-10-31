@@ -37,7 +37,7 @@ class ApiErrorContractTests {
         webhooks = mock(WebhookService.class);
         WebhookVerifier verifier = mock(WebhookVerifier.class);
         mvc = standaloneSetup(new PaymentController(payments),
-                new PaystackWebhookController(verifier, webhooks))
+                new PaystackWebhookController(verifier, mock(com.faith.pay.webhook.WebhookInboxService.class)))
                 .setControllerAdvice(new ApiExceptionHandler())
                 .build();
     }

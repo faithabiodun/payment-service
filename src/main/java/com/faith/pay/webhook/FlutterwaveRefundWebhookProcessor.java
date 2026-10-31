@@ -21,7 +21,8 @@ public class FlutterwaveRefundWebhookProcessor {
         if (verified.providerRefundId() == null || verified.providerRefundId().isBlank()) {
             throw new IllegalArgumentException("Flutterwave refund verification returned no refund ID");
         }
-        if (!deduplicator.claim("FLUTTERWAVE:" + event, verified.providerRefundId())) return;
+        if (!deduplicator.claim("FLUTTERWAVE:" + event,
+                verified.providerRefundId() + ":" + verified.state().name())) return;
         refunds.applyVerifiedState(localRefundReference, verified, PaymentEventSource.WEBHOOK, rawPayload);
     }
 }

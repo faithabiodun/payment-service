@@ -10,11 +10,11 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/webhooks/stripe")
 public class StripeWebhookController {
     private final StripeWebhookVerifier verifier;
-    private final StripeWebhookService service;
+    private final WebhookInboxService inbox;
 
-    public StripeWebhookController(StripeWebhookVerifier verifier, StripeWebhookService service) {
+    public StripeWebhookController(StripeWebhookVerifier verifier, WebhookInboxService inbox) {
         this.verifier = verifier;
-        this.service = service;
+        this.inbox = inbox;
     }
 
     @PostMapping
@@ -27,7 +27,8 @@ public class StripeWebhookController {
         } catch (SignatureVerificationException | IllegalArgumentException invalidSignature) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
         }
-        service.process(verifiedEvent, rawBody);
+        inbox.accept(com.faith.pay.provider.core.PaymentProviderType.STRIPE, rawBody,
+                verifiedEvent.getId(), verifiedEvent.getType());
         return ResponseEntity.ok().build();
     }
 }

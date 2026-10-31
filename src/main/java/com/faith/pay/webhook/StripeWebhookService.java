@@ -40,6 +40,11 @@ public class StripeWebhookService {
     }
 
     public void process(Event event, byte[] rawBody) {
+        processTrustedEvent(event, rawBody);
+    }
+
+    /** Processes an event whose raw bytes were authenticated before durable inbox insertion. */
+    public void processTrustedEvent(Event event, byte[] rawBody) {
         String eventType = event.getType();
         String raw = new String(rawBody, StandardCharsets.UTF_8);
         if ("checkout.session.completed".equals(eventType)

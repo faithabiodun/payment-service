@@ -36,6 +36,12 @@
             <artifactId>stripe-java</artifactId>
             <version>34.1.0</version>
         </dependency>
+        <!-- Stripe's generated Event model uses Gson for deserialization. The SDK declares it runtime-only. -->
+        <dependency>
+            <groupId>com.google.code.gson</groupId>
+            <artifactId>gson</artifactId>
+            <version>2.10.1</version>
+        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>

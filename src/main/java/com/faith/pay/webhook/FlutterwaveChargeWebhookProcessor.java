@@ -23,7 +23,8 @@ public class FlutterwaveChargeWebhookProcessor {
         if (verified.providerPaymentId() == null || verified.providerPaymentId().isBlank()) {
             throw new IllegalArgumentException("Flutterwave verification returned no transaction ID");
         }
-        if (!deduplicator.claim("FLUTTERWAVE:" + event, verified.providerPaymentId())) return;
+        if (!deduplicator.claim("FLUTTERWAVE:" + event,
+                verified.providerPaymentId() + ":" + verified.state().name())) return;
         if (verified.succeeded()) {
             settlement.settleSuccess(verified.reference(), verified, PaymentEventSource.WEBHOOK, rawPayload);
         }
