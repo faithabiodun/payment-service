@@ -1,6 +1,7 @@
 package com.faith.pay.refund;
 
 import com.faith.pay.payment.Payment;
+import com.faith.pay.provider.core.PaymentProviderType;
 
 import jakarta.persistence.*;
 
@@ -27,11 +28,12 @@ public class Refund {
     )
     private String reference;
 
-    @Column(
-            name = "provider_refund_id",
-            unique = true
-    )
+    @Column(name = "provider_refund_id")
     private String providerRefundId;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "provider", nullable = false, length = 20)
+    private PaymentProviderType provider;
 
     @Column(name = "provider_status")
     private String providerStatus;
@@ -87,6 +89,7 @@ public class Refund {
             String idempotencyKey
     ) {
         this.payment = payment;
+        this.provider = payment.getProvider();
         this.reference = reference;
         this.amountKobo = amountKobo;
         this.requestedAmountKobo = requestedAmountKobo;
@@ -173,6 +176,8 @@ public class Refund {
     public String getProviderRefundId() {
         return providerRefundId;
     }
+
+    public PaymentProviderType getProvider() { return provider; }
 
     public String getProviderStatus() {
         return providerStatus;

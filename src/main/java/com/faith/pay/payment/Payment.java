@@ -1,6 +1,7 @@
 package com.faith.pay.payment;
 
 import com.faith.pay.order.Order;
+import com.faith.pay.provider.core.PaymentProviderType;
 
 import jakarta.persistence.*;
 
@@ -57,6 +58,10 @@ public class Payment {
             unique = true
     )
     private String idempotencyKey;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "provider", nullable = false, length = 20)
+    private PaymentProviderType provider = PaymentProviderType.PAYSTACK;
 
     @Column(name = "authorization_url")
     private String authorizationUrl;
@@ -236,6 +241,8 @@ public class Payment {
     public String getIdempotencyKey() {
         return idempotencyKey;
     }
+
+    public PaymentProviderType getProvider() { return provider; }
 
     public String getAuthorizationUrl() {
         return authorizationUrl;
