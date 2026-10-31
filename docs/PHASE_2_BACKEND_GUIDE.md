@@ -161,7 +161,7 @@ Refund requests use the persisted PaymentIntent ID and carry a separate local re
 - A duplicate Stripe webhook has a stable `evt_...` event ID. The processor claims it transactionally; shared settlement also prevents a second financial effect if Stripe sends another event ID for the same payment.
 - Invalid/missing `Stripe-Signature` or an unset `STRIPE_WEBHOOK_SECRET` is rejected before service processing.
 - `checkout.session.completed` can still represent an unpaid delayed-method Session. The adapter checks current Stripe state and settles only `succeeded`; Stripe's later asynchronous-success event has a distinct event ID and can settle then.
-- Refund create and payment create currently translate Stripe SDK exceptions to provider-unavailable errors conservatively. Checkpoint 9 will classify permanent 4xx/auth errors separately from ambiguous connection failures.
+- Provider HTTP failures are classified in Checkpoint 9: permanent 4xx/auth responses are not retried, while safe read timeouts and transient server/rate-limit responses can be retried.
 - Checkpoint 7 adds a PostgreSQL inbox: authenticated payloads are persisted before the controllers return `200`, then a leased worker verifies and applies their business effect.
 - Payment reconciliation is still Paystack-specific in this repository. Provider-aware reconciliation is checkpoint 10.
 - Stripe credentials are configured locally through `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` in the ignored `.env`. Automated adapter tests still use WireMock and local signatures so they are deterministic and never charge a real account. Never commit either value.
@@ -280,6 +280,47 @@ worker: claim lease -> OutboxSink.dispatch -> mark PUBLISHED
 ### What you should be able to explain as a backend developer
 
 The payment and its outbox event commit atomically, so downstream work cannot be silently lost after a committed payment. The worker is at least once, not exactly once; consumers need idempotency. The outbox is a database pattern, not a message broker.
+
+## Checkpoint 9 — Provider resilience
+
+### What problem does resilience solve?
+
+External providers can be slow, unavailable, or rate-limited. A timeout means our caller stopped waiting; it does not prove the provider did not process a request. Retry behavior must depend on both the HTTP result and the operation type.
+
+### Current policy and code
+
+`ProviderFailureClassifier` recognizes network-level exceptions, HTTP `429`, and `5xx` as transient. A `400`, `401`, or `403` is treated as permanent and is not retried. `ProviderCallExecutor` applies Resilience4j CircuitBreaker, Retry, and semaphore Bulkhead to calls returned from `PaymentProviderRegistry` and `RefundProviderRegistry` through small adapter decorators.
+
+- GET-style verification/refund lookup operations may retry up to three attempts with exponential backoff and random jitter.
+- Payment initialization and refund creation are money-moving POSTs and are never retried automatically in this implementation.
+- The circuit opens after enough transient failures, waits 30 seconds, then allows two half-open probes.
+- The bulkhead caps concurrent provider operations at 20 per provider and fails fast when saturated.
+- Paystack and Flutterwave WebClient calls have a 10-second request wait. Stripe has a 5-second connect timeout, 10-second read timeout, and SDK automatic retries disabled so retry behavior remains visible.
+
+The retry order is significant: the Retry wrapper runs inside the circuit breaker, so three GET attempts count as one caller-level provider failure. Only the final transient failure contributes to opening the circuit. A circuit-open check happens before payment/refund reservation when the provider is already known to be unavailable.
+
+### Provider idempotency limits
+
+Stripe uses its provider idempotency key on payment/refund creation, but this code still does not automatically retry money-moving POSTs. Stripe API v1 stores the first endpoint result for a key and returns the same result for retries; our explicit policy remains conservative until operation-level recovery is designed. Flutterwave V4 documents `X-Idempotency-Key`, but this codebase's configured Flutterwave adapter is V3 and does not claim V4 semantics. Paystack create/refund calls also are not retried by this policy. The local idempotency keys protect our own operation identity; they do not prove that a provider accepted or rejected an ambiguous request.
+
+The dependency is Resilience4j 2.4.0, using its core CircuitBreaker, Retry, and Bulkhead modules. Its 2.4.0 release includes Spring Boot 4 support, but this service uses the programmatic core modules rather than the Spring AOP starter: that keeps retry boundaries explicit around provider ports and avoids annotation-based retries accidentally wrapping money-moving methods. [Resilience4j 2.4.0 release](https://github.com/resilience4j/resilience4j/releases/tag/v2.4.0), [Retry configuration](https://resilience4j.readme.io/docs/retry), [Stripe idempotency](https://docs.stripe.com/api/idempotent_requests), [Flutterwave V4 request headers](https://developer.flutterwave.com/v4.0/docs/api-headers).
+
+### Failure cases
+
+- `400` invalid request: no retry; fix the request.
+- `401`/`403`: no blind retry; credentials or scopes need attention.
+- `429`: safe read requests back off with jitter; money-moving requests are not replayed.
+- `500`/connection reset/timeout: safe reads retry; ambiguous money POSTs remain attached to their provider for reconciliation.
+- Repeated transient failures: the provider circuit opens, preventing new calls until probes are allowed.
+- Bulkhead full: fail fast rather than allowing provider calls to consume every request thread.
+
+**Exercise:** A refund POST times out, and the provider may have accepted it. What should the service do?
+
+**Solution:** Do not submit the refund again as a new request. Keep the local refund reservation and query/reconcile with the same provider. Provider idempotency can make a same-operation retry safer only when that provider's current API contract and the stable operation key are confirmed.
+
+### What you should be able to explain as a backend developer
+
+A retry repeats a technical read, not a financial decision. The provider classifier separates transient failures from permanent input/auth errors. Circuit breakers stop repeated calls during outages, and bulkheads limit concurrent work. An ambiguous money POST is preserved for provider-specific reconciliation rather than failed over or blindly repeated.
 
 **Exercise:** Why does the local payment store both `cs_...` and `pi_...` identifiers?
 

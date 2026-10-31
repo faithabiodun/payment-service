@@ -10,10 +10,10 @@ import java.util.Map;
 public class RefundProviderRegistry {
     private final Map<PaymentProviderType, RefundProvider> providers;
 
-    public RefundProviderRegistry(List<RefundProvider> providers) {
+    public RefundProviderRegistry(List<RefundProvider> providers, ProviderCallExecutor calls) {
         EnumMap<PaymentProviderType, RefundProvider> byType = new EnumMap<>(PaymentProviderType.class);
         for (RefundProvider provider : providers) {
-            if (byType.put(provider.type(), provider) != null) {
+            if (byType.put(provider.type(), new ResilientRefundProvider(provider, calls)) != null) {
                 throw new IllegalStateException("Multiple refund providers registered for " + provider.type());
             }
         }

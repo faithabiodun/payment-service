@@ -10,9 +10,10 @@ public class StripeClientConfiguration {
     @Bean
     StripeClient stripeClient(StripeProperties properties) {
         StripeClient.StripeClientBuilder builder = StripeClient.builder()
-                // We keep retries visible to our application; safe retries can reuse the
-                // operation's Stripe idempotency key and are handled by our policy.
-                .setMaxNetworkRetries(0);
+                // ProviderCallExecutor owns retry policy; disable SDK retries to avoid hidden POST replays.
+                .setMaxNetworkRetries(0)
+                .setConnectTimeout(5_000)
+                .setReadTimeout(10_000);
         // A harmless placeholder lets the modular monolith start before Stripe
         // credentials are configured. StripePaymentProvider checks readiness
         // before it reserves locally or makes any API request.

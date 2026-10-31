@@ -11,10 +11,10 @@ import java.util.Map;
 public class PaymentProviderRegistry {
     private final Map<PaymentProviderType, PaymentProvider> providers;
 
-    public PaymentProviderRegistry(List<PaymentProvider> providers) {
+    public PaymentProviderRegistry(List<PaymentProvider> providers, ProviderCallExecutor calls) {
         EnumMap<PaymentProviderType, PaymentProvider> byType = new EnumMap<>(PaymentProviderType.class);
         for (PaymentProvider provider : providers) {
-            if (byType.put(provider.type(), provider) != null) {
+            if (byType.put(provider.type(), new ResilientPaymentProvider(provider, calls)) != null) {
                 throw new IllegalStateException("Multiple payment providers registered for " + provider.type());
             }
         }
