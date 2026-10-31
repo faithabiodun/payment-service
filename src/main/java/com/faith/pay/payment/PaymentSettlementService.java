@@ -7,6 +7,7 @@ import com.faith.pay.provider.core.VerifiedPayment;
 import com.faith.pay.provider.paystack.PaystackPaymentProvider;
 import com.faith.pay.provider.dto.PaystackTransactionData;
 import com.faith.pay.outbox.OutboxEventStore;
+import com.faith.pay.ledger.LedgerPostingService;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -19,17 +20,20 @@ public class PaymentSettlementService {
     private final PaymentEventStore events;
 
     private final OutboxEventStore outbox;
+    private final LedgerPostingService ledger;
 
 
     public PaymentSettlementService(
             PaymentRepository payments,
             PaymentEventStore events,
-            OutboxEventStore outbox
+            OutboxEventStore outbox,
+            LedgerPostingService ledger
     ) {
 
         this.payments = payments;
         this.events = events;
         this.outbox = outbox;
+        this.ledger = ledger;
     }
 
 
@@ -150,6 +154,13 @@ public class PaymentSettlementService {
             );
         }
 
+        long feeMinor = provider.feeMinor() == null ? 0L : provider.feeMinor();
+        if (feeMinor < 0 || feeMinor > payment.getAmountKobo()) {
+            throw new AppException(ErrorCode.PROVIDER_RESPONSE_INVALID,
+                    org.springframework.http.HttpStatus.BAD_GATEWAY,
+                    "Provider fee is outside the valid captured amount");
+        }
+
         /* Validate provider truth before treating a replay as idempotent. */
         if (payment.getStatus().hasSuccessfulCharge()) {
             if (payment.getProviderTransactionId() != null
@@ -213,6 +224,8 @@ public class PaymentSettlementService {
 
                 rawPayload
         );
+
+        ledger.postPaymentSuccess(payment);
 
         outbox.append("PAYMENT", payment.getReference(), "PAYMENT_SUCCEEDED",
                 java.util.Map.of("reference", payment.getReference(), "provider", payment.getProvider().name(),

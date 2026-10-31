@@ -32,7 +32,9 @@ class RefundStateServiceTests {
         refunds = mock(RefundRepository.class);
         payments = mock(PaymentRepository.class);
         events = mock(PaymentEventStore.class);
-        states = new RefundStateService(refunds, payments, events, mock(com.faith.pay.outbox.OutboxEventStore.class));
+        states = new RefundStateService(refunds, payments, events,
+                mock(com.faith.pay.outbox.OutboxEventStore.class),
+                mock(com.faith.pay.ledger.LedgerPostingService.class));
 
         payment = new Payment("PAY-1", new Order("customer@example.test", 1_000_000L),
                 1_000_000L, "payment-key");

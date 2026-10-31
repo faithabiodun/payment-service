@@ -8,6 +8,7 @@ import com.faith.pay.provider.core.VerifiedRefund;
 import com.faith.pay.provider.paystack.PaystackPaymentProvider;
 import com.faith.pay.provider.dto.PaystackRefundData;
 import com.faith.pay.outbox.OutboxEventStore;
+import com.faith.pay.ledger.LedgerPostingService;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -21,17 +22,20 @@ public class RefundStateService {
     private final PaymentRepository payments;
     private final PaymentEventStore events;
     private final OutboxEventStore outbox;
+    private final LedgerPostingService ledger;
 
     public RefundStateService(
             RefundRepository refunds,
             PaymentRepository payments,
             PaymentEventStore events,
-            OutboxEventStore outbox
+            OutboxEventStore outbox,
+            LedgerPostingService ledger
     ) {
         this.refunds = refunds;
         this.payments = payments;
         this.events = events;
         this.outbox = outbox;
+        this.ledger = ledger;
     }
 
     @Transactional
@@ -92,6 +96,7 @@ public class RefundStateService {
             case SUCCESS -> {
                 refund.markSuccessful(providerRefundId, provider.providerStatus());
                 payment.addRefundedKobo(refund.getAmountKobo());
+                ledger.postRefundSuccess(refund);
             }
             case PENDING -> throw invalidTransition(current, target);
         }

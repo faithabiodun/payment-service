@@ -352,6 +352,53 @@ This repository does not yet import provider settlement reports or payout files,
 
 Reconciliation repairs local state from the provider attached to each attempt. It uses normalized results and shared locked transitions. Matching truth can be applied once; contradictory truth is recorded and escalated instead of guessed. The attempt history supports audit and investigation.
 
+## Checkpoint 11 — Immutable ledger foundation
+
+### Accounting from first principles
+
+A ledger records where financial value came from and where it went. A **journal entry** groups one business event. Its **postings** assign amounts to named accounts. A debit and a credit are the two sides of the entry; neither word means “good” or “bad.” The balancing rule is that total debit equals total credit in one currency. Account type and normal balance determine how to read its balance.
+
+For a customer paying ₦5,000 (`500,000` kobo), the example journal is:
+
+| Account | Debit | Credit |
+| --- | ---: | ---: |
+| Provider Clearing — selected provider | 500,000 | 0 |
+| Sales Revenue | 0 | 500,000 |
+
+If the provider reports a ₦75 fee (`7,500` kobo), add a balanced pair:
+
+| Account | Debit | Credit |
+| --- | ---: | ---: |
+| Payment Processing Fee Expense | 7,500 | 0 |
+| Provider Clearing — selected provider | 0 | 7,500 |
+
+The merchant's clearing receivable is then 492,500 kobo. A ₦2,500 refund (`250,000` kobo) posts a debit to Sales Returns and a credit to the same provider clearing account. This example treats the order amount as recognized sales; tax, inventory, settlement bank accounts, and processor fee reimbursement are outside the current domain model.
+
+### Current implementation and transaction boundary
+
+`LedgerPostingService` creates a payment journal in the same `@Transactional` method as `PaymentSettlementService` updates payment/order state, audit history, and outbox. It creates a refund journal in the same `RefundStateService` transaction that marks the refund successful and increments the refunded amount.
+
+```text
+TX: lock payment/refund
+  -> validate provider truth + financial invariant
+  -> update payment/order or refund
+  -> append audit and outbox records
+  -> insert journal entry + balanced postings
+COMMIT all together
+```
+
+`V12__create_immutable_ledger.sql` seeds provider-specific clearing accounts plus sales revenue, returns, and processing-fee expense accounts. Database deferred constraint triggers reject journals with fewer than two postings, multiple currencies, or unequal debits and credits at transaction commit. Update/delete triggers reject edits to posted journals and postings. Corrections must be new reversing/correcting journals. `LedgerBalanceQuery` derives net debit as `SUM(debit - credit)`; no mutable balance column is treated as the source of truth.
+
+The journal `event_key` is unique (`PAYMENT_SUCCESS:<reference>` or `REFUND_SUCCESS:<reference>`), so replay cannot add a second ledger effect. The existing payment/refund row locks and refund-capacity check remain the primary protection against concurrent money movement; the ledger is the immutable accounting trail.
+
+**Exercise:** A journal has debit postings totaling 507,500 kobo and credit postings totaling 500,000 kobo. Is it valid?
+
+**Solution:** No. It is short 7,500 credit. If that debit represents the fee expense, the matching credit must reduce Provider Clearing by 7,500.
+
+### What you should be able to explain as a backend developer
+
+Operational status says whether a payment/refund is pending or complete; the ledger records its balanced financial movements. A successful state change and its journal commit atomically. Posted financial history is append-only; an error is corrected with a new journal, and balances are derived from postings.
+
 **Exercise:** Why does the local payment store both `cs_...` and `pi_...` identifiers?
 
 **Solution:** The Checkout Session ID identifies the hosted checkout used to retrieve the attempt before payment completes. The PaymentIntent ID identifies Stripe's payment lifecycle and is the correct reference for settlement/refunds. They describe related but different objects.
