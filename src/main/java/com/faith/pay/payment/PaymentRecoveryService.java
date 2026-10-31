@@ -3,6 +3,7 @@ package com.faith.pay.payment;
 import com.faith.pay.error.PaymentNotFoundException;
 import com.faith.pay.payment.audit.*;
 import com.faith.pay.reconciliation.ReconciliationAttemptStore;
+import com.faith.pay.reconciliation.ReconciliationDiscrepancyType;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -35,6 +36,7 @@ public class PaymentRecoveryService {
             events.append(payment, PaymentEventType.RECONCILIATION_MISMATCH,
                     payment.getStatus(), payment.getStatus(), PaymentEventSource.RECONCILIATION, null);
             attempts.append("PAYMENT", reference, "MANUAL_REVIEW", null,
+                    ReconciliationDiscrepancyType.LOCAL_PROVIDER_CONTRADICTION,
                     "Provider terminal state contradicted local " + payment.getStatus());
             return TransitionResult.CONTRADICTORY;
         }
@@ -61,11 +63,17 @@ public class PaymentRecoveryService {
 
     @Transactional
     public void flagManualReview(String reference, String providerStatus, String details) {
+        flagManualReview(reference, providerStatus, ReconciliationDiscrepancyType.MANUAL_REVIEW_REQUIRED, details);
+    }
+
+    @Transactional
+    public void flagManualReview(String reference, String providerStatus,
+                                 ReconciliationDiscrepancyType discrepancy, String details) {
         Payment payment = payments.findByReferenceForUpdate(reference)
                 .orElseThrow(() -> new PaymentNotFoundException(reference));
         payment.recordReconciliationAttempt();
         payment.requireManualReview();
-        attempts.append("PAYMENT", reference, "MANUAL_REVIEW", providerStatus, details);
+        attempts.append("PAYMENT", reference, "MANUAL_REVIEW", providerStatus, discrepancy, details);
         events.append(payment, PaymentEventType.RECONCILIATION_MISMATCH, payment.getStatus(), payment.getStatus(),
                 PaymentEventSource.RECONCILIATION, null);
     }

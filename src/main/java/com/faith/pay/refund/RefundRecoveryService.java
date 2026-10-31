@@ -1,6 +1,7 @@
 package com.faith.pay.refund;
 
 import com.faith.pay.reconciliation.ReconciliationAttemptStore;
+import com.faith.pay.reconciliation.ReconciliationDiscrepancyType;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -27,9 +28,15 @@ public class RefundRecoveryService {
 
     @Transactional
     public void flagManualReview(String reference, String providerStatus, String details) {
+        flagManualReview(reference, providerStatus, ReconciliationDiscrepancyType.MANUAL_REVIEW_REQUIRED, details);
+    }
+
+    @Transactional
+    public void flagManualReview(String reference, String providerStatus,
+                                 ReconciliationDiscrepancyType discrepancy, String details) {
         Refund refund = refunds.findByReferenceForUpdate(reference).orElseThrow();
         refund.recordReconciliationAttempt();
         refund.requireManualReview();
-        attempts.append("REFUND", reference, "MANUAL_REVIEW", providerStatus, details);
+        attempts.append("REFUND", reference, "MANUAL_REVIEW", providerStatus, discrepancy, details);
     }
 }

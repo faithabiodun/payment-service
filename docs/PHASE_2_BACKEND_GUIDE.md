@@ -322,6 +322,36 @@ The dependency is Resilience4j 2.4.0, using its core CircuitBreaker, Retry, and 
 
 A retry repeats a technical read, not a financial decision. The provider classifier separates transient failures from permanent input/auth errors. Circuit breakers stop repeated calls during outages, and bulkheads limit concurrent work. An ambiguous money POST is preserved for provider-specific reconciliation rather than failed over or blindly repeated.
 
+## Checkpoint 10 — Multi-provider reconciliation
+
+### What problem does reconciliation solve?
+
+Webhooks can be delayed, duplicated, or missed. Reconciliation is a scheduled read against the provider that owns a payment/refund. It compares the provider's current result with our local record and either applies a safe state transition or records a discrepancy for manual review.
+
+### Current flow and files
+
+`PaymentReconciler` now reads `Payment.provider` and calls only `PaymentProviderRegistry.get(provider).verify(...)`. Before settlement it prefers the provider transaction ID; while checkout is still open it can use the stored checkout/session identity. `RefundReconciler` follows `Refund.provider` and uses `RefundProviderRegistry` for verify or discovery. Both use normalized `VerifiedPayment` / `VerifiedRefund`, then call shared settlement/refund state services.
+
+```text
+NO TX: query the saved provider through its registry adapter
+compare reference/provider/state/amount/currency
+TX: lock payment/refund -> apply safe state or flag review -> record history -> COMMIT
+```
+
+`ReconciliationJob` still uses ShedLock to avoid multiple application instances running the same scheduled batch. Worker-level row claiming is separate; the inbox and outbox use `SKIP LOCKED` instead. `ReconciliationAttemptStore` preserves each attempt. Migration `V11__classify_reconciliation_discrepancies.sql` adds a constrained `discrepancy_type` column, with categories such as `AMOUNT_MISMATCH`, `CURRENCY_MISMATCH`, `UNKNOWN_PROVIDER_STATE`, `LOCAL_PROVIDER_CONTRADICTION`, and `DUPLICATE_PROVIDER_TRANSACTION`.
+
+The code never queries all three providers for one attempt. A failed, cancelled, pending, or unknown result that contradicts a local success goes to manual review. A successful provider result is passed through `PaymentSettlementService`, which independently checks owner, local reference, amount and currency under a row lock. Refunds use the same `RefundStateService` invariants and do not resubmit a refund when a provider result is missing.
+
+This repository does not yet import provider settlement reports or payout files, so it cannot reconcile a merchant bank settlement total. It reconciles transaction/refund state only; a settlement-level comparison requires a real provider report/API and a defined ledger clearing-account model.
+
+**Exercise:** A `STRIPE` payment has an ambiguous timeout. Should reconciliation query Flutterwave too?
+
+**Solution:** No. The provider was persisted on the payment attempt before the request. Reconciliation queries Stripe and records any conflict; only a new payment attempt can deliberately select another provider.
+
+### What you should be able to explain as a backend developer
+
+Reconciliation repairs local state from the provider attached to each attempt. It uses normalized results and shared locked transitions. Matching truth can be applied once; contradictory truth is recorded and escalated instead of guessed. The attempt history supports audit and investigation.
+
 **Exercise:** Why does the local payment store both `cs_...` and `pi_...` identifiers?
 
 **Solution:** The Checkout Session ID identifies the hosted checkout used to retrieve the attempt before payment completes. The PaymentIntent ID identifies Stripe's payment lifecycle and is the correct reference for settlement/refunds. They describe related but different objects.
