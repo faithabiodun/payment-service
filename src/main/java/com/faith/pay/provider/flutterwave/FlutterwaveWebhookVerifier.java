@@ -10,7 +10,7 @@ import java.security.GeneralSecurityException;
 import java.security.MessageDigest;
 import java.util.Base64;
 
-/** Verifies Flutterwave V4's HMAC-SHA256 signature over the exact raw request bytes. */
+/** Verifies Flutterwave V4's HMAC-SHA256 signature over exact raw request bytes. */
 @Component
 public class FlutterwaveWebhookVerifier {
     private static final String ALGORITHM = "HmacSHA256";

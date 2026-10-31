@@ -26,14 +26,23 @@ paystack:
   secret-key: ${PAYSTACK_SECRET_KEY}
   callback-url: ${PAYSTACK_CALLBACK_URL:http://localhost:8080/api/v1/payments/callback}
 
-# Flutterwave V4 uses OAuth client credentials and HMAC-SHA256 webhook signing.
-# These settings do not activate payment routing by themselves.
-flutterwave:
-  base-url: ${FLUTTERWAVE_BASE_URL:https://developersandbox-api.flutterwave.com}
-  token-url: ${FLUTTERWAVE_TOKEN_URL:https://idp.flutterwave.com/realms/flutterwave/protocol/openid-connect/token}
-  client-id: ${FLUTTERWAVE_CLIENT_ID:}
-  client-secret: ${FLUTTERWAVE_CLIENT_SECRET:}
-  webhook-secret-hash: ${FLUTTERWAVE_WEBHOOK_SECRET_HASH:}
+# The supplied dashboard screenshot contains V3 keys. Standard checkout is
+# hosted by Flutterwave; only the secret key and a separately configured
+# webhook hash are used server-side. Never put key values in this file.
+flutterwave-v3:
+  base-url: ${FLUTTERWAVE_V3_BASE_URL:https://api.flutterwave.com/v3}
+  secret-key: ${FLUTTERWAVE_V3_SECRET_KEY:}
+  webhook-secret-hash: ${FLUTTERWAVE_V3_WEBHOOK_SECRET_HASH:}
+  callback-url: ${FLUTTERWAVE_V3_CALLBACK_URL:http://localhost:8080/api/v1/payments/callback}
+
+# V4 credentials are a separate OAuth client ID/secret pair. Do not populate
+# these from V3 public/secret/encryption keys.
+flutterwave-v4:
+  base-url: ${FLUTTERWAVE_V4_BASE_URL:https://developersandbox-api.flutterwave.com}
+  token-url: ${FLUTTERWAVE_V4_TOKEN_URL:https://idp.flutterwave.com/realms/flutterwave/protocol/openid-connect/token}
+  client-id: ${FLUTTERWAVE_V4_CLIENT_ID:}
+  client-secret: ${FLUTTERWAVE_V4_CLIENT_SECRET:}
+  webhook-secret-hash: ${FLUTTERWAVE_V4_WEBHOOK_SECRET_HASH:}
 
 reconciliation:
   payment-stale-after: ${RECONCILIATION_PAYMENT_STALE_AFTER:PT10M}
