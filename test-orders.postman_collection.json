@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Payment Service - API Testing",
-    "description": "Exercise payment initialization, verification, signed webhook handling, refund initiation, and payment status.",
+    "description": "Exercise test-order creation, Paystack or Flutterwave hosted checkout, provider-backed verification, signed webhook handling, refunds, and local payment status. Flutterwave requests explicitly select provider=FLUTTERWAVE; do not fake a successful webhook because the application re-verifies the transaction with Flutterwave.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -108,6 +108,64 @@
       "response": []
     },
     {
+      "name": "Initialize Flutterwave Payment",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Idempotency-Key",
+            "value": "{{$guid}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"orderId\": {{orderId}},\n  \"provider\": \"FLUTTERWAVE\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/payments/initialize",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "payments",
+            "initialize"
+          ]
+        },
+        "description": "Run after Create Test Order. Explicitly selects Flutterwave for this payment attempt. Open the returned authorizationUrl and complete the Flutterwave TEST checkout. Provider choice is persisted on this attempt."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const payment = pm.response.json();",
+              "if (payment.reference) pm.collectionVariables.set('reference', payment.reference);",
+              "if (payment.amountKobo) pm.collectionVariables.set('amountKobo', payment.amountKobo);",
+              "if (payment.authorizationUrl) pm.collectionVariables.set('authorizationUrl', payment.authorizationUrl);",
+              "pm.test('Flutterwave checkout URL returned', () => pm.expect(payment.authorizationUrl).to.be.a('string').and.not.empty);"
+            ]
+          }
+        }
+      ],
+      "response": []
+    },
+    {
       "name": "Verify Payment",
       "request": {
         "method": "POST",
@@ -119,7 +177,7 @@
           "host": ["{{baseUrl}}"],
           "path": ["api", "v1", "payments", "{{reference}}", "verify"]
         },
-        "description": "Run after completing checkout with Paystack for this reference. The response contains providerStatus (Paystack's financial transaction status), settlementApplied (whether this call applied settlement), and payment (the current local PaymentResponse). The Simulate Paystack Success Webhook request only changes local state; it does not create a Paystack transaction, so it cannot make this verification return providerStatus success."
+        "description": "After completing the selected provider checkout, verifies with the provider already saved on this payment attempt. For Flutterwave, this uses Flutterwave verification; the browser redirect itself does not settle the payment."
       },
       "event": [
         {
@@ -156,7 +214,7 @@
           "host": ["{{baseUrl}}"],
           "path": ["api", "v1", "payments", "{{reference}}", "refunds"]
         },
-        "description": "Run only after a real Paystack test checkout has succeeded and local payment status is SUCCESS or PARTIALLY_REFUNDED. Synthetic webhook payments do not exist at Paystack and cannot be refunded there."
+        "description": "Run only after a real checkout with the selected provider has succeeded and local payment status is SUCCESS or PARTIALLY_REFUNDED. Synthetic webhook samples do not create a provider transaction and cannot be refunded at the provider."
       },
       "event": [
         {
@@ -245,7 +303,7 @@
           "host": ["{{baseUrl}}"],
           "path": ["api", "v1", "payments", "{{reference}}"]
         },
-        "description": "Check the payment status after the webhook call. A successfully processed charge.success event should show status SUCCESS."
+        "description": "Check the local state after provider verification or after Flutterwave sends its signed webhook through the configured public URL."
       },
       "response": []
     }
