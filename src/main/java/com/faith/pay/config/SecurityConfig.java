@@ -37,6 +37,7 @@ public class SecurityConfig {
         List<UserDetails> users = new ArrayList<>();
         addUser(users, environment, encoder, "API_CUSTOMER_USERNAME", "API_CUSTOMER_PASSWORD", "CUSTOMER");
         addUser(users, environment, encoder, "API_ADMIN_USERNAME", "API_ADMIN_PASSWORD", "ADMIN");
+        addUser(users, environment, encoder, "API_MONITORING_USERNAME", "API_MONITORING_PASSWORD", "MONITORING");
         return new InMemoryUserDetailsManager(users);
     }
 
@@ -62,7 +63,10 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         // These routes still verify provider-specific signatures before storing events.
                         .requestMatchers("/webhooks/paystack", "/webhooks/flutterwave", "/webhooks/stripe").permitAll()
+                        // The browser return is UX only; it never settles or verifies a payment.
+                        .requestMatchers("/api/v1/payments/callback").permitAll()
                         .requestMatchers("/actuator/health", "/actuator/health/**", "/actuator/info").permitAll()
+                        .requestMatchers("/actuator/prometheus").hasAnyRole("MONITORING", "ADMIN")
                         .anyRequest().authenticated())
                 .httpBasic(basic -> {});
 

@@ -30,6 +30,8 @@ services:
       API_CUSTOMER_PASSWORD: ${API_CUSTOMER_PASSWORD:?Set API_CUSTOMER_PASSWORD}
       API_ADMIN_USERNAME: ${API_ADMIN_USERNAME:?Set API_ADMIN_USERNAME}
       API_ADMIN_PASSWORD: ${API_ADMIN_PASSWORD:?Set API_ADMIN_PASSWORD}
+      API_MONITORING_USERNAME: ${API_MONITORING_USERNAME:?Set API_MONITORING_USERNAME}
+      API_MONITORING_PASSWORD: ${API_MONITORING_PASSWORD:?Set API_MONITORING_PASSWORD}
       FLUTTERWAVE_V3_SECRET_KEY: ${FLUTTERWAVE_V3_SECRET_KEY:-}
       FLUTTERWAVE_V3_WEBHOOK_SECRET_HASH: ${FLUTTERWAVE_V3_WEBHOOK_SECRET_HASH:-}
       FLUTTERWAVE_V4_CLIENT_ID: ${FLUTTERWAVE_V4_CLIENT_ID:-}
@@ -52,8 +54,10 @@ services:
       - app
     ports:
       - "9090:9090"
+    configs:
+      - source: prometheus_config
+        target: /etc/prometheus/prometheus.yml
     volumes:
-      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - payment-service-prometheus:/prometheus
 
   grafana:
@@ -72,3 +76,17 @@ volumes:
   payment-service-postgres:
   payment-service-prometheus:
   payment-service-grafana:
+
+configs:
+  prometheus_config:
+    content: |
+      global:
+        scrape_interval: 15s
+      scrape_configs:
+        - job_name: payment-service
+          metrics_path: /actuator/prometheus
+          basic_auth:
+            username: "${API_MONITORING_USERNAME:?Set API_MONITORING_USERNAME}"
+            password: "${API_MONITORING_PASSWORD:?Set API_MONITORING_PASSWORD}"
+          static_configs:
+            - targets: [app:8080]
