@@ -17,7 +17,7 @@ public class SecurityConfig {
                 .csrf(AbstractHttpConfigurer::disable)
 
                         .authorizeHttpRequests(auth ->
-                        auth.requestMatchers("/webhooks/paystack", "/webhooks/flutterwave").permitAll()
+                        auth.requestMatchers("/webhooks/paystack", "/webhooks/flutterwave", "/webhooks/stripe").permitAll()
                                 .anyRequest().permitAll()
                 );
 

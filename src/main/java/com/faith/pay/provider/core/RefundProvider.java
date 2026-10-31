@@ -2,7 +2,7 @@ package com.faith.pay.provider.core;
 
 import java.util.List;
 
-public interface RefundProvider {
+public interface RefundProvider extends ProviderReadiness {
     PaymentProviderType type();
     ProviderRefundResult refund(ProviderRefundRequest request);
     VerifiedRefund verifyRefund(String providerRefundId, String currency);

@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Payment Service - API Testing",
-    "description": "Exercise test-order creation, Paystack or Flutterwave hosted checkout, provider-backed verification, signed webhook handling, refunds, and local payment status. Flutterwave requests explicitly select provider=FLUTTERWAVE; do not fake a successful webhook because the application re-verifies the transaction with Flutterwave.",
+    "description": "Exercise test-order creation, Paystack, Flutterwave or Stripe hosted checkout, provider-backed verification, signed webhook handling, refunds, and local payment status. Flutterwave and Stripe requests explicitly select their provider. Do not fake success webhooks: the application re-verifies transactions with the selected provider.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -159,6 +159,64 @@
               "if (payment.amountKobo) pm.collectionVariables.set('amountKobo', payment.amountKobo);",
               "if (payment.authorizationUrl) pm.collectionVariables.set('authorizationUrl', payment.authorizationUrl);",
               "pm.test('Flutterwave checkout URL returned', () => pm.expect(payment.authorizationUrl).to.be.a('string').and.not.empty);"
+            ]
+          }
+        }
+      ],
+      "response": []
+    },
+    {
+      "name": "Initialize Stripe Payment",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Idempotency-Key",
+            "value": "{{$guid}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"orderId\": {{orderId}},\n  \"provider\": \"STRIPE\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/payments/initialize",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "payments",
+            "initialize"
+          ]
+        },
+        "description": "Run after Create Test Order. Explicitly selects Stripe for this attempt. Open the returned authorizationUrl and complete Stripe TEST Checkout. Requires STRIPE_SECRET_KEY in the app environment. The local order amount is authoritative."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const payment = pm.response.json();",
+              "if (payment.reference) pm.collectionVariables.set('reference', payment.reference);",
+              "if (payment.amountKobo) pm.collectionVariables.set('amountKobo', payment.amountKobo);",
+              "if (payment.authorizationUrl) pm.collectionVariables.set('authorizationUrl', payment.authorizationUrl);",
+              "pm.test('Stripe Checkout URL returned', () => pm.expect(payment.authorizationUrl).to.be.a('string').and.not.empty);"
             ]
           }
         }

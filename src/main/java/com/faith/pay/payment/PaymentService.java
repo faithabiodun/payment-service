@@ -51,6 +51,8 @@ public class PaymentService {
 
         PaymentProviderType selectedProvider = request.provider() == null
                 ? PaymentProviderType.PAYSTACK : request.provider();
+        PaymentProvider provider = providers.get(selectedProvider);
+        provider.validateConfiguration();
         PaymentReservation reservation = commands.reserve(request.orderId(), idempotencyKey, selectedProvider);
 
         if (!reservation.newlyCreated()) {
@@ -59,7 +61,6 @@ public class PaymentService {
 
 
         try {
-            PaymentProvider provider = providers.get(reservation.provider());
             ProviderPaymentResult result = provider.initialize(new ProviderPaymentRequest(
                     reservation.reference(), reservation.email(), reservation.amountKobo(),
                     reservation.currency(), null, idempotencyKey));
@@ -94,8 +95,13 @@ public class PaymentService {
 
         Payment payment = payments.findByReference(reference)
                 .orElseThrow(() -> new PaymentNotFoundException(reference));
-        VerifiedPayment provider = providers.get(payment.getProvider()).verify(reference,
-                payment.getProviderTransactionId());
+        String providerId = payment.getProviderTransactionId();
+        if (providerId == null || providerId.isBlank()) {
+            // Before settlement, Stripe knows its Checkout Session ID while the
+            // PaymentIntent ID is only available after the customer pays.
+            providerId = payment.getAccessCode();
+        }
+        VerifiedPayment provider = providers.get(payment.getProvider()).verify(reference, providerId);
 
 
         /*

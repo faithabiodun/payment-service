@@ -48,6 +48,15 @@ flutterwave-v4:
   client-secret: ${FLUTTERWAVE_V4_CLIENT_SECRET:}
   webhook-secret-hash: ${FLUTTERWAVE_V4_WEBHOOK_SECRET_HASH:}
 
+# Stripe is configured independently from Paystack and Flutterwave. Never put
+# the secret API key or webhook signing secret directly in this file.
+stripe:
+  secret-key: ${STRIPE_SECRET_KEY:}
+  webhook-secret: ${STRIPE_WEBHOOK_SECRET:}
+  api-base: ${STRIPE_API_BASE:https://api.stripe.com}
+  callback-url: ${STRIPE_CALLBACK_URL:http://localhost:8080/api/v1/payments/callback}
+  cancel-url: ${STRIPE_CANCEL_URL:http://localhost:8080/api/v1/payments/callback}
+
 reconciliation:
   payment-stale-after: ${RECONCILIATION_PAYMENT_STALE_AFTER:PT10M}
   abandon-after: ${RECONCILIATION_ABANDON_AFTER:PT24H}

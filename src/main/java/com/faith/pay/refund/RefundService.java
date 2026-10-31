@@ -34,17 +34,17 @@ public class RefundService {
 
     /** Reserves locally, then calls the selected provider after the reservation transaction commits. */
     public RefundResponse refund(String paymentReference, RefundRequest request, String idempotencyKey) {
+        Payment payment = payments.findByReference(paymentReference)
+                .orElseThrow();
+        RefundProvider provider = providers.get(payment.getProvider());
+        provider.validateConfiguration();
         RefundReservation reservation = commands.reserve(paymentReference, request, idempotencyKey);
 
         if (!reservation.newlyCreated()) {
             return get(reservation.refundReference());
         }
 
-        Payment payment = payments.findByReference(paymentReference)
-                .orElseThrow();
-
         try {
-            RefundProvider provider = providers.get(payment.getProvider());
             ProviderRefundResult result = provider.refund(new ProviderRefundRequest(
                     payment.getReference(), payment.getProviderTransactionId(), reservation.refundReference(),
                     reservation.amountKobo(), payment.getCurrency(), request.reason(), idempotencyKey));
