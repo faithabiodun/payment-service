@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Payment Service - Phase 2 End-to-End Testing",
-    "description": "Use with the companion local environment. Authenticated APIs use customer Basic credentials; refund requests use admin credentials; Prometheus uses monitoring credentials. Run a separate order per provider and complete the hosted TEST checkout before verification/refunds. Signed synthetic webhook requests test authentication, durable inbox acknowledgement, deduplication, and metrics only: they use allow-listed no-op event types and MUST NOT settle payments. Ledger/outbox/reconciliation/concurrency checks that are not API endpoints are documented in docs/POSTMAN_PHASE_2_TESTING.md.",
+    "description": "Active checkout providers are Paystack and Stripe. Flutterwave is decommissioned for new payment attempts; its provider identity remains for historical records. Use the companion local environment. Authenticated APIs use customer Basic credentials; refunds use admin credentials; Prometheus uses monitoring credentials. Complete hosted TEST checkout before verification/refunds. Synthetic signed webhook requests exercise authentication, durable inbox acknowledgement, deduplication, and metrics only; they must not settle payments. Non-API ledger, outbox, reconciliation, and concurrency checks are documented in docs/POSTMAN_PHASE_2_TESTING.md.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -207,75 +207,6 @@
                   "if (payment.paymentId) pm.collectionVariables.set('paymentId', payment.paymentId);",
                   "if (payment.amountKobo) pm.collectionVariables.set('amountKobo', payment.amountKobo);",
                   "if (payment.authorizationUrl) pm.collectionVariables.set('authorizationUrl', payment.authorizationUrl);"
-                ]
-              }
-            }
-          ],
-          "response": []
-        },
-        {
-          "name": "Initialize Flutterwave Payment",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Idempotency-Key",
-                "value": "{{paymentIdempotencyKey}}"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "Accept",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"orderId\": {{orderId}},\n  \"provider\": \"FLUTTERWAVE\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/payments/initialize",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "payments",
-                "initialize"
-              ]
-            },
-            "description": "Run after creating a NEW test order. Explicitly selects FLUTTERWAVE; complete the hosted TEST checkout before verification. Provider choice cannot be changed on this attempt."
-          },
-          "event": [
-            {
-              "listen": "prerequest",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.collectionVariables.set('provider', 'FLUTTERWAVE');"
-                ]
-              }
-            },
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('FLUTTERWAVE payment initialized', () => pm.response.to.have.status(201));",
-                  "const payment = pm.response.json();",
-                  "if (payment.reference) pm.collectionVariables.set('reference', payment.reference);",
-                  "if (payment.paymentId) pm.collectionVariables.set('paymentId', payment.paymentId);",
-                  "if (payment.amountKobo) pm.collectionVariables.set('amountKobo', payment.amountKobo);",
-                  "if (payment.authorizationUrl) pm.collectionVariables.set('authorizationUrl', payment.authorizationUrl);",
-                  "pm.test('FLUTTERWAVE hosted checkout URL returned', () => pm.expect(payment.authorizationUrl).to.be.a('string').and.not.empty);"
                 ]
               }
             }
@@ -867,102 +798,6 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('Invalid Paystack signature rejected', () => pm.response.to.have.status(401));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Flutterwave - Signed No-op Inbox Event (Replay for Deduplication)",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "verif-hash",
-                "value": "{{flutterwaveWebhookSecretHash}}"
-              }
-            ],
-            "url": "{{baseUrl}}/webhooks/flutterwave",
-            "description": "V3 verifier compares verif-hash with the configured dashboard webhook secret hash. This unknown no-op event tests durable inbox/dedup only; it cannot settle a payment. Run it repeatedly or use Runner; the deterministic event/object/status deduplication key should keep one inbox effect.",
-            "body": {
-              "mode": "raw",
-              "raw": "{\"event\":\"postman.inbox.test\",\"data\":{\"id\":\"sample\",\"status\":\"received\"}}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "auth": {
-              "type": "noauth"
-            }
-          },
-          "response": [],
-          "event": [
-            {
-              "listen": "prerequest",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "if (!pm.environment.get('flutterwaveWebhookSecretHash')) throw new Error('Set flutterwaveWebhookSecretHash to the app FLUTTERWAVE_V3_WEBHOOK_SECRET_HASH.');",
-                  "let sampleId = pm.environment.get('webhookSampleId');",
-                  "if (!sampleId) { sampleId = pm.variables.replaceIn('{{$guid}}').replaceAll('-', ''); pm.environment.set('webhookSampleId', sampleId); }",
-                  "pm.request.body.update({ mode: 'raw', raw: JSON.stringify({ event: 'postman.inbox.test', data: { id: sampleId, status: 'received' } }) });"
-                ]
-              }
-            },
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('Authenticated Flutterwave webhook acknowledged', () => pm.response.to.have.status(200));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Flutterwave - Reject Invalid Signature",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "verif-hash",
-                "value": "invalid-signature"
-              }
-            ],
-            "url": "{{baseUrl}}/webhooks/flutterwave",
-            "description": "",
-            "body": {
-              "mode": "raw",
-              "raw": "{\"event\":\"postman.inbox.test\",\"data\":{\"id\":\"invalid-signature-case\",\"status\":\"received\"}}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "auth": {
-              "type": "noauth"
-            }
-          },
-          "response": [],
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('Invalid Flutterwave hash rejected', () => pm.response.to.have.status(401));"
                 ]
               }
             }

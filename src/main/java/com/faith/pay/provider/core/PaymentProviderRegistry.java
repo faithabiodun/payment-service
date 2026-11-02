@@ -14,6 +14,9 @@ public class PaymentProviderRegistry {
     public PaymentProviderRegistry(List<PaymentProvider> providers, ProviderCallExecutor calls) {
         EnumMap<PaymentProviderType, PaymentProvider> byType = new EnumMap<>(PaymentProviderType.class);
         for (PaymentProvider provider : providers) {
+            // Keep Flutterwave's enum identity for historical rows, but do not
+            // expose its adapter to new operations or provider routing.
+            if (provider.type() == PaymentProviderType.FLUTTERWAVE) continue;
             if (byType.put(provider.type(), new ResilientPaymentProvider(provider, calls)) != null) {
                 throw new IllegalStateException("Multiple payment providers registered for " + provider.type());
             }
