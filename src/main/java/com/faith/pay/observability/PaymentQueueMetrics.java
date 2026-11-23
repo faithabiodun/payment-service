@@ -3,12 +3,16 @@ package com.faith.pay.observability;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.binder.MeterBinder;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
 /** Queue depth is read from PostgreSQL so dashboards show durable work, not process-local counters. */
 @Component
 public class PaymentQueueMetrics implements MeterBinder {
+    private static final Logger log = LoggerFactory.getLogger(PaymentQueueMetrics.class);
     private final JdbcTemplate jdbc;
 
     public PaymentQueueMetrics(JdbcTemplate jdbc) {
@@ -26,9 +30,19 @@ public class PaymentQueueMetrics implements MeterBinder {
     }
 
     private void gauge(MeterRegistry registry, String name, String table, String predicate) {
-        Gauge.builder(name, jdbc, template -> template.queryForObject(
-                        "SELECT count(*) FROM " + table + " WHERE " + predicate, Long.class))
+        String sql = "SELECT count(*) FROM " + table + " WHERE " + predicate;
+        Gauge.builder(name, jdbc, template -> sampleCount(template, name, sql))
                 .description("Durable rows currently matching " + predicate)
                 .register(registry);
+    }
+
+    private double sampleCount(JdbcTemplate template, String name, String sql) {
+        try {
+            Long count = template.queryForObject(sql, Long.class);
+            return count == null ? 0d : count.doubleValue();
+        } catch (DataAccessException failure) {
+            log.warn("Could not sample queue depth metric {}: {}", name, failure.getClass().getSimpleName());
+            return Double.NaN;
+        }
     }
 }
