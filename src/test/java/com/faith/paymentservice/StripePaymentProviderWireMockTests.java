@@ -39,7 +39,7 @@ class StripePaymentProviderWireMockTests {
     void createsHostedCheckoutUsingDatabaseAmountAndLocalIdempotencyKey() {
         stripeApi.stubFor(post(urlEqualTo("/v1/checkout/sessions"))
                 .withHeader("Authorization", equalTo("Bearer sk_test_wiremock"))
-                .withHeader("Idempotency-Key", equalTo("operation-checkout-1"))
+                .withHeader("Idempotency-Key", equalTo("payment:operation-checkout-1"))
                 .willReturn(okJson("""
                         {"id":"cs_test_123","object":"checkout.session","url":"https://checkout.stripe.test/cs_test_123",
                          "client_reference_id":"PAY-STRIPE-1","mode":"payment","status":"open","payment_status":"unpaid"}
@@ -83,7 +83,7 @@ class StripePaymentProviderWireMockTests {
     @Test
     void createsRefundWithItsOwnStableProviderIdempotencyKey() {
         stripeApi.stubFor(post(urlEqualTo("/v1/refunds"))
-                .withHeader("Idempotency-Key", equalTo("operation-refund-1"))
+                .withHeader("Idempotency-Key", equalTo("refund:operation-refund-1"))
                 .willReturn(okJson("""
                         {"id":"re_test_123","object":"refund","amount":125000,"currency":"ngn",
                          "status":"pending","payment_intent":"pi_test_123",
@@ -122,5 +122,22 @@ class StripePaymentProviderWireMockTests {
                         """)));
         assertThat(provider.findRefundsForPayment("pi_test_123", "REF-STRIPE-1", "NGN"))
                 .extracting(VerifiedRefund::providerRefundId).containsExactly("re_test_123");
+    }
+
+    @Test
+    void verifyWithoutSavedSessionIdDiscoversMissingSessionAsCancelled() {
+        stripeApi.stubFor(get(urlPathEqualTo("/v1/checkout/sessions"))
+                .willReturn(okJson("""
+                        {"object":"list","data":[],"has_more":false,"url":"/v1/checkout/sessions"}
+                        """)));
+        stripeApi.stubFor(get(urlPathEqualTo("/v1/payment_intents/search"))
+                .willReturn(okJson("""
+                        {"object":"search_result","data":[],"has_more":false,"url":"/v1/payment_intents/search"}
+                        """)));
+
+        VerifiedPayment result = provider.verify("PAY-STRIPE-UNCERTAIN", null);
+
+        assertThat(result.state()).isEqualTo(ProviderPaymentState.CANCELLED);
+        assertThat(result.reference()).isEqualTo("PAY-STRIPE-UNCERTAIN");
     }
 }

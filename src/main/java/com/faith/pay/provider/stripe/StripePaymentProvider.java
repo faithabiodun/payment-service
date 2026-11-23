@@ -12,9 +12,11 @@ import com.stripe.model.Refund;
 import com.stripe.model.StripeCollection;
 import com.stripe.model.checkout.Session;
 import com.stripe.net.RequestOptions;
+import com.stripe.param.PaymentIntentSearchParams;
 import com.stripe.param.RefundCreateParams;
 import com.stripe.param.RefundListParams;
 import com.stripe.param.checkout.SessionCreateParams;
+import com.stripe.param.checkout.SessionListParams;
 import com.stripe.param.checkout.SessionRetrieveParams;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
@@ -80,7 +82,7 @@ public class StripePaymentProvider implements PaymentProvider, RefundProvider {
                 .build();
 
         try {
-            Session session = stripe.v1().checkout().sessions().create(params, options(request.idempotencyKey()));
+            Session session = stripe.v1().checkout().sessions().create(params, options("payment", request.idempotencyKey()));
             if (blank(session.getId()) || blank(session.getUrl())) {
                 throw new IllegalStateException("Stripe Checkout Session response omitted its id or URL");
             }
@@ -100,36 +102,67 @@ public class StripePaymentProvider implements PaymentProvider, RefundProvider {
             }
 
             if (blank(providerPaymentId)) {
-                throw new IllegalArgumentException("Stripe verification requires its saved Checkout Session ID");
+                return discoverByReference(reference);
             }
 
             Session session = stripe.v1().checkout().sessions().retrieve(providerPaymentId,
                     SessionRetrieveParams.builder().addExpand("payment_intent").build());
-            String providerReference = session.getClientReferenceId();
-            if (blank(providerReference) && session.getMetadata() != null) {
-                providerReference = session.getMetadata().get(REFERENCE_METADATA_KEY);
-            }
-            if (!reference.equals(providerReference)) {
-                throw new IllegalArgumentException("Stripe Checkout Session belongs to a different local payment reference");
-            }
-            if (!"payment".equals(session.getMode())) {
-                throw new IllegalArgumentException("Stripe Checkout Session is not a one-time payment");
-            }
-
-            String paymentIntentId = session.getPaymentIntent();
-            if (blank(paymentIntentId)) {
-                return new VerifiedPayment(type(), session.getId(), reference,
-                        sessionState(session.getStatus(), session.getPaymentStatus()),
-                        value(session.getAmountTotal()), session.getCurrency(), null, null,
-                        instant(session.getCreated()));
-            }
-
-            PaymentIntent intent = session.getPaymentIntentObject();
-            if (intent == null) intent = stripe.v1().paymentIntents().retrieve(paymentIntentId);
-            return verifyPaymentIntent(reference, intent, session);
+            return verifySession(reference, session);
         } catch (StripeException failure) {
             throw new ProviderCommunicationException("Could not verify payment with Stripe", failure);
         }
+    }
+
+    private VerifiedPayment discoverByReference(String reference) throws StripeException {
+        StripeCollection<Session> recentSessions = stripe.v1().checkout().sessions().list(
+                SessionListParams.builder().setLimit(100L).addExpand("data.payment_intent").build());
+        for (Session session : recentSessions.getData()) {
+            String candidateRef = session.getClientReferenceId();
+            if (blank(candidateRef) && session.getMetadata() != null) {
+                candidateRef = session.getMetadata().get(REFERENCE_METADATA_KEY);
+            }
+            if (reference.equals(candidateRef)) {
+                return verifySession(reference, session);
+            }
+        }
+
+        String sanitized = reference.replace("'", "\\'");
+        var intents = stripe.v1().paymentIntents().search(PaymentIntentSearchParams.builder()
+                .setQuery("metadata['" + REFERENCE_METADATA_KEY + "']:'" + sanitized + "'")
+                .setLimit(2L)
+                .build());
+        if (!intents.getData().isEmpty()) {
+            return verifyPaymentIntent(reference, intents.getData().getFirst());
+        }
+
+        // Neither a Checkout Session nor a PaymentIntent exists at Stripe for this uncertain attempt.
+        return new VerifiedPayment(type(), null, reference, ProviderPaymentState.CANCELLED,
+                0L, null, null, null, null);
+    }
+
+    private VerifiedPayment verifySession(String reference, Session session) throws StripeException {
+        String providerReference = session.getClientReferenceId();
+        if (blank(providerReference) && session.getMetadata() != null) {
+            providerReference = session.getMetadata().get(REFERENCE_METADATA_KEY);
+        }
+        if (!reference.equals(providerReference)) {
+            throw new IllegalArgumentException("Stripe Checkout Session belongs to a different local payment reference");
+        }
+        if (!"payment".equals(session.getMode())) {
+            throw new IllegalArgumentException("Stripe Checkout Session is not a one-time payment");
+        }
+
+        String paymentIntentId = session.getPaymentIntent();
+        if (blank(paymentIntentId)) {
+            return new VerifiedPayment(type(), session.getId(), reference,
+                    sessionState(session.getStatus(), session.getPaymentStatus()),
+                    value(session.getAmountTotal()), session.getCurrency(), null, null,
+                    instant(session.getCreated()));
+        }
+
+        PaymentIntent intent = session.getPaymentIntentObject();
+        if (intent == null) intent = stripe.v1().paymentIntents().retrieve(paymentIntentId);
+        return verifyPaymentIntent(reference, intent, session);
     }
 
     private VerifiedPayment verifyPaymentIntent(String expectedReference, PaymentIntent intent) {
@@ -168,7 +201,7 @@ public class StripePaymentProvider implements PaymentProvider, RefundProvider {
                 .putMetadata("payment_reference", request.paymentReference())
                 .build();
         try {
-            Refund refund = stripe.v1().refunds().create(params, options(request.idempotencyKey()));
+            Refund refund = stripe.v1().refunds().create(params, options("refund", request.idempotencyKey()));
             return refundResult(refund, request.refundReference());
         } catch (StripeException failure) {
             throw new ProviderCommunicationException("Could not create Stripe refund", failure);
@@ -200,6 +233,11 @@ public class StripePaymentProvider implements PaymentProvider, RefundProvider {
                     .toList();
         } catch (StripeException failure) {
             throw new ProviderCommunicationException("Could not search Stripe refunds", failure);
+        } catch (RuntimeException failure) {
+            if (failure.getCause() instanceof StripeException stripeFailure) {
+                throw new ProviderCommunicationException("Could not search Stripe refunds", stripeFailure);
+            }
+            throw failure;
         }
     }
 
@@ -249,9 +287,9 @@ public class StripePaymentProvider implements PaymentProvider, RefundProvider {
         return ProviderPaymentState.PENDING;
     }
 
-    private RequestOptions options(String idempotencyKey) {
+    private RequestOptions options(String scope, String idempotencyKey) {
         if (blank(idempotencyKey)) throw new IllegalArgumentException("Stripe idempotency key is required");
-        return RequestOptions.builder().setIdempotencyKey(idempotencyKey).build();
+        return RequestOptions.builder().setIdempotencyKey(scope + ":" + idempotencyKey).build();
     }
 
     private String redirectUrl(String requested, String configured, String reference, boolean success) {

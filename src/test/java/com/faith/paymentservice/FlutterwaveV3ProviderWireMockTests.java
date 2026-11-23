@@ -119,4 +119,40 @@ class FlutterwaveV3ProviderWireMockTests {
         assertThat(found.getFirst().providerRefundId()).isEqualTo("778899");
         provider.verify(0, postRequestedFor(urlPathMatching(".*/refund")));
     }
+
+    @Test
+    void verifyHandlesNullAppFeeFractionalFeeAndLowercaseCurrency() {
+        provider.stubFor(get(urlPathEqualTo("/transactions/verify_by_reference"))
+                .withQueryParam("tx_ref", equalTo("PAY-FLW-NULL-FEE"))
+                .willReturn(okJson("""
+                        {"status":"success","data":{"id":123457,"tx_ref":"PAY-FLW-NULL-FEE","amount":100.50,
+                         "currency":"ngn","status":"pending","payment_type":"card","app_fee":null}}
+                        """)));
+
+        var pending = adapter.verify("PAY-FLW-NULL-FEE", null);
+        assertThat(pending.amountMinor()).isEqualTo(10_050L);
+        assertThat(pending.feeMinor()).isNull();
+
+        provider.stubFor(get(urlPathEqualTo("/transactions/verify_by_reference"))
+                .withQueryParam("tx_ref", equalTo("PAY-FLW-FRAC-FEE"))
+                .willReturn(okJson("""
+                        {"status":"success","data":{"id":123458,"tx_ref":"PAY-FLW-FRAC-FEE","amount":100.50,
+                         "currency":"ngn","status":"successful","payment_type":"card","app_fee":1.407}}
+                        """)));
+
+        var fractional = adapter.verify("PAY-FLW-FRAC-FEE", null);
+        assertThat(fractional.feeMinor()).isEqualTo(141L);
+    }
+
+    @Test
+    void findRefundsThrowsWhenFlutterwaveReturnsErrorEnvelope() {
+        provider.stubFor(get(urlPathEqualTo("/refunds"))
+                .willReturn(okJson("""
+                        {"status":"error","message":"temporary failure","data":null}
+                        """)));
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                () -> adapter.findRefundsForPayment("123456", "REF-1", "NGN"))
+                .isInstanceOf(com.faith.pay.error.ProviderCommunicationException.class);
+    }
 }

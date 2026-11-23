@@ -27,18 +27,39 @@ public class PaystackClient {
         this.properties = properties;
     }
 
+    public void validateConfiguration() {
+        if (properties.secretKey() == null || properties.secretKey().isBlank()) {
+            throw new AppException(ErrorCode.PROVIDER_UNAVAILABLE, HttpStatus.SERVICE_UNAVAILABLE,
+                    "Paystack is selected but PAYSTACK_SECRET_KEY is not configured");
+        }
+    }
+
     public PaystackInitializeData initialize(
             String email,
             long amountKobo,
             String reference
     ) {
+        return initialize(email, amountKobo, reference, "NGN", null);
+    }
+
+    public PaystackInitializeData initialize(
+            String email,
+            long amountKobo,
+            String reference,
+            String currency,
+            String callbackUrl
+    ) {
+        String effectiveCurrency = (currency == null || currency.isBlank()) ? "NGN" : currency;
+        String effectiveCallback = (callbackUrl == null || callbackUrl.isBlank())
+                ? properties.callbackUrl() : callbackUrl;
 
         PaystackInitializeRequest request =
                 new PaystackInitializeRequest(
                         email,
                         Long.toString(amountKobo),
                         reference,
-                        properties.callbackUrl()
+                        effectiveCurrency,
+                        effectiveCallback
                 );
 
         PaystackResponse<PaystackInitializeData> response;

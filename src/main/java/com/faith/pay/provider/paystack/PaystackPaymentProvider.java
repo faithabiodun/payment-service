@@ -19,8 +19,18 @@ public class PaystackPaymentProvider implements PaymentProvider, RefundProvider 
     @Override public PaymentProviderType type() { return PaymentProviderType.PAYSTACK; }
 
     @Override
+    public void validateConfiguration() {
+        client.validateConfiguration();
+    }
+
+    @Override
     public ProviderPaymentResult initialize(ProviderPaymentRequest request) {
-        PaystackInitializeData data = client.initialize(request.customerEmail(), request.amountMinor(), request.reference());
+        boolean defaultCurrency = request.currency() == null || "NGN".equalsIgnoreCase(request.currency());
+        boolean defaultCallback = request.callbackUrl() == null || request.callbackUrl().isBlank();
+        PaystackInitializeData data = (defaultCurrency && defaultCallback)
+                ? client.initialize(request.customerEmail(), request.amountMinor(), request.reference())
+                : client.initialize(request.customerEmail(), request.amountMinor(), request.reference(),
+                        request.currency(), request.callbackUrl());
         return new ProviderPaymentResult(type(), null, request.reference(), ProviderPaymentState.REQUIRES_ACTION,
                 data.authorizationUrl(), null, data.accessCode());
     }

@@ -1,5 +1,6 @@
 package com.faith.pay.provider.core;
 
+import com.stripe.exception.ApiConnectionException;
 import com.stripe.exception.StripeException;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClientRequestException;
@@ -18,7 +19,11 @@ public class ProviderFailureClassifier {
                 int status = response.getStatusCode().value();
                 return status == 429 || status >= 500;
             }
-            if (current instanceof StripeException response && response.getStatusCode() != null) {
+            if (current instanceof ApiConnectionException) {
+                return true;
+            }
+            if (current instanceof StripeException response && response.getStatusCode() != null
+                    && response.getStatusCode() > 0) {
                 int status = response.getStatusCode();
                 return status == 429 || status >= 500;
             }

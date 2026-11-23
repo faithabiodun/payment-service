@@ -12,6 +12,7 @@ import io.github.resilience4j.core.IntervalFunction;
 import io.github.resilience4j.retry.Retry;
 import io.github.resilience4j.retry.RetryConfig;
 import io.github.resilience4j.retry.RetryRegistry;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
@@ -28,12 +29,19 @@ public class ProviderCallExecutor {
     private final ProviderFailureClassifier classifier;
     private final MeterRegistry meters;
 
+    @Autowired
     public ProviderCallExecutor(ProviderFailureClassifier classifier, MeterRegistry meters) {
+        this(classifier, meters, Duration.ofSeconds(30));
+    }
+
+    public ProviderCallExecutor(ProviderFailureClassifier classifier, MeterRegistry meters,
+                                Duration waitDurationInOpenState) {
         this.classifier = classifier;
         this.meters = meters;
         CircuitBreakerConfig breakerConfig = CircuitBreakerConfig.custom()
                 .slidingWindowSize(10).minimumNumberOfCalls(5).failureRateThreshold(50)
-                .waitDurationInOpenState(Duration.ofSeconds(30))
+                .waitDurationInOpenState(waitDurationInOpenState)
+                .automaticTransitionFromOpenToHalfOpenEnabled(true)
                 .permittedNumberOfCallsInHalfOpenState(2)
                 .recordException(classifier::isTransient)
                 .build();
@@ -85,7 +93,8 @@ public class ProviderCallExecutor {
     }
 
     public void validateAvailable(PaymentProviderType provider) {
-        if (circuitBreakers.circuitBreaker(provider.name()).getState() == CircuitBreaker.State.OPEN) {
+        CircuitBreaker.State state = circuitBreakers.circuitBreaker(provider.name()).getState();
+        if (state == CircuitBreaker.State.OPEN || state == CircuitBreaker.State.FORCED_OPEN) {
             throw new ProviderCommunicationException("Provider circuit is open for " + provider);
         }
     }
