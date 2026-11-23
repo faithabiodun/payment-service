@@ -10,6 +10,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.concurrent.ThreadLocalRandom;
 
 @Component
@@ -38,7 +39,14 @@ public class WebhookInboxWorker {
 
     @Scheduled(fixedDelayString = "${webhook.inbox.poll-millis:3000}")
     public void processBatch() {
-        for (WebhookInboxEvent event : inbox.claimBatch(batchSize, leaseSeconds, MAX_ATTEMPTS)) process(event);
+        Instant leaseDeadline = Instant.now().plusSeconds(leaseSeconds > 5 ? leaseSeconds - 5L : Math.max(1L, leaseSeconds));
+        for (WebhookInboxEvent event : inbox.claimBatch(batchSize, leaseSeconds, MAX_ATTEMPTS)) {
+            if (Instant.now().isAfter(leaseDeadline)) {
+                log.warn("Stopping webhook inbox batch early because lease deadline expired; remaining events will be reclaimed");
+                break;
+            }
+            process(event);
+        }
     }
 
     private void process(WebhookInboxEvent event) {
@@ -50,13 +58,26 @@ public class WebhookInboxWorker {
                         ApiResource.GSON.fromJson(event.rawPayload(), Event.class),
                         event.rawPayload().getBytes(StandardCharsets.UTF_8));
             }
-            markProcessed(event.id(), event.attemptCount());
         } catch (RuntimeException failure) {
             long base = Math.min(3600L, 1L << Math.min(event.attemptCount(), 10));
             long delay = base + ThreadLocalRandom.current().nextLong(Math.max(1L, base / 2L));
-            markFailed(event, event.attemptCount(), failure.getClass().getSimpleName(), delay);
+            try {
+                markFailed(event, event.attemptCount(), failure.getClass().getSimpleName(), delay);
+            } catch (RuntimeException dbFailure) {
+                log.error("Failed to record webhook inbox failure; provider={}, inboxId={}, attempt={}",
+                        event.provider(), event.id(), event.attemptCount(), dbFailure);
+            }
             log.warn("Webhook inbox processing deferred; provider={}, inboxId={}, attempt={}, errorType={}",
                     event.provider(), event.id(), event.attemptCount(), failure.getClass().getSimpleName());
+            return;
+        }
+
+        try {
+            markProcessed(event.id(), event.attemptCount());
+        } catch (RuntimeException dbFailure) {
+            // Event was already processed; do not call markFailed or dead-letter it.
+            log.error("Webhook event processed but failed to mark PROCESSED; provider={}, inboxId={}, attempt={}",
+                    event.provider(), event.id(), event.attemptCount(), dbFailure);
         }
     }
 

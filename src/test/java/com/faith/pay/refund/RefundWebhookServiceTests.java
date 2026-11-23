@@ -101,6 +101,33 @@ class RefundWebhookServiceTests {
         verifyNoMoreInteractions(states);
     }
 
+    @Test
+    void ignoresNonMatchingExplicitRefundReferenceAndRoutesFetchThroughExecutor() throws Exception {
+        var calls = spy(new com.faith.pay.provider.core.ProviderCallExecutor(
+                new com.faith.pay.provider.core.ProviderFailureClassifier(),
+                new io.micrometer.core.instrument.simple.SimpleMeterRegistry()));
+        var guardedWebhooks = new RefundWebhookService(refunds, paystack, states, calls);
+
+        Refund local = refund("REF-LOCAL", "PAY-5", null);
+        when(refunds.findNonTerminalByPaymentReference("PAY-5")).thenReturn(List.of(local));
+
+        boolean handled = guardedWebhooks.process("refund.processed",
+                event("processed", "250000", "REF-FOREIGN-999", "PAY-5"), "{}");
+        org.assertj.core.api.Assertions.assertThat(handled).isTrue();
+        verifyNoInteractions(paystack, states);
+
+        local.markProcessing("9009", "processing");
+        PaystackRefundData fetched = new PaystackRefundData(
+                BigInteger.valueOf(9009), "processed", 250_000L, "NGN", null, Instant.now());
+        when(paystack.fetchRefund("9009")).thenReturn(fetched);
+
+        guardedWebhooks.process("refund.processed", event("processed", "250000", "9009", "PAY-5"), "{}");
+
+        verify(calls).execute(eq(com.faith.pay.provider.core.PaymentProviderType.PAYSTACK),
+                eq(com.faith.pay.provider.core.ProviderCallOperation.READ_ONLY), any());
+        verify(states).applyProviderState("REF-LOCAL", fetched, PaymentEventSource.WEBHOOK, "{}");
+    }
+
     private PaystackRefundWebhookData event(
             String status,
             String amount,

@@ -9,6 +9,7 @@ import com.faith.pay.provider.core.VerifiedPayment;
 import com.faith.pay.provider.core.VerifiedRefund;
 import com.faith.pay.provider.stripe.StripePaymentProvider;
 import com.faith.pay.refund.RefundRepository;
+import com.faith.pay.refund.RefundStatus;
 import com.stripe.model.Event;
 import com.stripe.model.Refund;
 import com.stripe.model.StripeObject;
@@ -50,7 +51,8 @@ public class StripeWebhookService {
         if ("checkout.session.completed".equals(eventType)
                 || "checkout.session.async_payment_succeeded".equals(eventType)) {
             processCheckout(event, eventType, raw);
-        } else if ("refund.created".equals(eventType) || "refund.updated".equals(eventType)) {
+        } else if ("refund.created".equals(eventType) || "refund.updated".equals(eventType)
+                || "refund.failed".equals(eventType)) {
             processRefund(event, eventType, raw);
         }
         // Other signed event types are acknowledged; domain actions are deliberately allow-listed.
@@ -90,7 +92,14 @@ public class StripeWebhookService {
                         .filter(refund -> refund.getProvider() == PaymentProviderType.STRIPE);
             }
         }
-        if (local.isEmpty()) return;
+        if (local.isEmpty()) {
+            if (refundRepository.existsByProviderAndStatusAndProviderRefundIdIsNull(
+                    PaymentProviderType.STRIPE, RefundStatus.PENDING)) {
+                throw new IllegalStateException(
+                        "Deferring Stripe refund webhook while a pending refund is awaiting its provider ID");
+            }
+            return;
+        }
 
         String currency = local.get().getPayment().getCurrency();
         VerifiedRefund verified = refundProviders.get(PaymentProviderType.STRIPE)

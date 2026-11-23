@@ -74,6 +74,37 @@ class StripeWebhookServiceTests {
         verifyNoInteractions(refundProcessor);
     }
 
+    @Test
+    void refundFailedEventIsRoutedAndDefersWhenPendingRefundAwaitsProviderId() throws Exception {
+        var paymentRegistry = mock(PaymentProviderRegistry.class);
+        var refundRegistry = mock(RefundProviderRegistry.class);
+        var refundProvider = mock(RefundProvider.class);
+        var paymentRepository = mock(PaymentRepository.class);
+        var paymentProcessor = mock(StripePaymentWebhookProcessor.class);
+        var refundRepository = mock(RefundRepository.class);
+        var refundProcessor = mock(StripeRefundWebhookProcessor.class);
+        var service = new StripeWebhookService(paymentRegistry, refundRegistry, paymentRepository, refundRepository,
+                paymentProcessor, refundProcessor);
+
+        String raw = """
+                {"id":"evt_refund_failed_1","object":"event","api_version":"2026-09-30.endive",
+                 "created":1793455200,"livemode":false,"type":"refund.failed",
+                 "data":{"object":{"id":"re_failed_1","object":"refund","status":"failed","amount":10000,"currency":"ngn"}}}
+                """;
+        Event event = new StripeWebhookVerifier(properties()).verify(raw.getBytes(StandardCharsets.UTF_8), signature(raw));
+        when(refundRepository.findByProviderAndProviderRefundId(PaymentProviderType.STRIPE, "re_failed_1"))
+                .thenReturn(Optional.empty());
+        when(refundRepository.existsByProviderAndStatusAndProviderRefundIdIsNull(
+                PaymentProviderType.STRIPE, com.faith.pay.refund.RefundStatus.PENDING))
+                .thenReturn(true);
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                () -> service.process(event, raw.getBytes(StandardCharsets.UTF_8)))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("Deferring Stripe refund webhook");
+        verifyNoInteractions(refundProvider, refundProcessor);
+    }
+
     private StripeProperties properties() {
         return new StripeProperties("sk_test_not_used", SECRET, "https://api.stripe.com",
                 "http://localhost/callback", "http://localhost/callback");

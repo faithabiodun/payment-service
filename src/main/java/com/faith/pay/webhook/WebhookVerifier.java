@@ -18,11 +18,13 @@ public class WebhookVerifier {
     private final byte[] secret;
 
     public WebhookVerifier(PaystackProperties properties) {
-        this.secret = properties.secretKey().getBytes(StandardCharsets.UTF_8);
+        this.secret = properties.secretKey() == null
+                ? new byte[0]
+                : properties.secretKey().getBytes(StandardCharsets.UTF_8);
     }
 
     public boolean isValid(byte[] rawBody, String providedSignature) {
-        if (providedSignature == null || providedSignature.isBlank()) {
+        if (secret.length == 0 || providedSignature == null || providedSignature.isBlank()) {
             return false;
         }
 

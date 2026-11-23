@@ -5,6 +5,7 @@ import com.faith.pay.payment.PaymentRepository;
 import com.faith.pay.provider.core.RefundProviderRegistry;
 import com.faith.pay.provider.core.VerifiedRefund;
 import com.faith.pay.refund.RefundRepository;
+import com.faith.pay.refund.RefundStatus;
 import com.faith.pay.provider.core.PaymentProviderRegistry;
 import com.faith.pay.provider.core.PaymentProviderType;
 import com.faith.pay.provider.core.VerifiedPayment;
@@ -41,8 +42,7 @@ public class FlutterwaveWebhookService {
     public void process(byte[] rawBody) {
         try {
             JsonNode root = mapper.readTree(rawBody);
-            String event = value(root, "event");
-            if (event == null) event = value(root, "event.type");
+            String event = eventName(root);
             JsonNode data = root.path("data");
             if (event != null && event.toLowerCase(java.util.Locale.ROOT).startsWith("refund")) {
                 processRefund(event, data, rawBody);
@@ -79,7 +79,14 @@ public class FlutterwaveWebhookService {
         String providerRefundId = value(data, "id");
         if (providerRefundId == null) throw new IllegalArgumentException("Flutterwave refund webhook is missing data.id");
         var local = refunds.findByProviderAndProviderRefundId(PaymentProviderType.FLUTTERWAVE, providerRefundId);
-        if (local.isEmpty()) return;
+        if (local.isEmpty()) {
+            if (refunds.existsByProviderAndStatusAndProviderRefundIdIsNull(
+                    PaymentProviderType.FLUTTERWAVE, RefundStatus.PENDING)) {
+                throw new IllegalStateException(
+                        "Deferring Flutterwave refund webhook while a pending refund is awaiting its provider ID");
+            }
+            return;
+        }
         String localReference = local.get().getReference();
         String currency = local.get().getPayment().getCurrency();
         VerifiedRefund verified = refundProviders.get(PaymentProviderType.FLUTTERWAVE)
@@ -87,9 +94,21 @@ public class FlutterwaveWebhookService {
         refundProcessor.apply(event, localReference, verified, new String(rawBody, StandardCharsets.UTF_8));
     }
 
+    private String eventName(JsonNode root) {
+        if (root == null) return null;
+        JsonNode eventNode = root.get("event");
+        if (eventNode != null && !eventNode.isNull()) {
+            if (eventNode.isValueNode()) return eventNode.asString();
+            JsonNode nestedType = eventNode.get("type");
+            if (nestedType != null && nestedType.isValueNode()) return nestedType.asString();
+        }
+        JsonNode literal = root.get("event.type");
+        return literal != null && literal.isValueNode() ? literal.asString() : null;
+    }
+
     private String value(JsonNode node, String field) {
         JsonNode value = node;
         for (String part : field.split("\\.")) value = value == null ? null : value.get(part);
-        return value == null || value.isNull() ? null : value.asText();
+        return value == null || value.isNull() || !value.isValueNode() ? null : value.asString();
     }
 }

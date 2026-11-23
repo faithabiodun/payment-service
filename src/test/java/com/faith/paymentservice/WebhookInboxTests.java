@@ -69,4 +69,22 @@ class WebhookInboxTests {
                 eq("charge.completed"), eq(new String(payload, java.nio.charset.StandardCharsets.UTF_8)));
         assertThat(meters.counter("payment.webhook.duplicate", "provider", "paystack").count()).isEqualTo(1);
     }
+
+    @Test
+    void envelopeParserHandlesLiteralAndNestedEventTypeKeysAndBlankPaystackSecret() {
+        var parser = new ProviderWebhookEnvelopeParser(new ObjectMapper());
+        byte[] literalKey = "{\"event.type\":\"charge.completed\",\"data\":{\"id\":42,\"status\":\"successful\"}}"
+                .getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        byte[] nestedObj = "{\"event\":{\"type\":\"charge.completed\"},\"data\":{\"id\":42,\"status\":\"successful\"}}"
+                .getBytes(java.nio.charset.StandardCharsets.UTF_8);
+
+        assertThat(parser.parse(PaymentProviderType.FLUTTERWAVE, literalKey, null, null).eventType())
+                .isEqualTo("charge.completed");
+        assertThat(parser.parse(PaymentProviderType.FLUTTERWAVE, nestedObj, null, null).eventType())
+                .isEqualTo("charge.completed");
+
+        var verifier = new com.faith.pay.webhook.WebhookVerifier(
+                new com.faith.pay.config.PaystackProperties("https://api.paystack.co", "", "http://localhost/cb"));
+        assertThat(verifier.isValid(literalKey, "abcd")).isFalse();
+    }
 }

@@ -26,8 +26,7 @@ public class ProviderWebhookEnvelopeParser {
             String objectId = null;
             String status = null;
             if (provider != PaymentProviderType.STRIPE) {
-                eventType = text(root, "event");
-                if (eventType == null) eventType = text(root, "event.type");
+                eventType = eventName(root);
                 objectId = text(root, "data.id");
                 status = text(root, "data.status");
             }
@@ -53,9 +52,21 @@ public class ProviderWebhookEnvelopeParser {
         }
     }
 
+    private String eventName(JsonNode root) {
+        if (root == null) return null;
+        JsonNode eventNode = root.get("event");
+        if (eventNode != null && !eventNode.isNull()) {
+            if (eventNode.isValueNode()) return eventNode.asString();
+            JsonNode nestedType = eventNode.get("type");
+            if (nestedType != null && nestedType.isValueNode()) return nestedType.asString();
+        }
+        JsonNode literal = root.get("event.type");
+        return literal != null && literal.isValueNode() ? literal.asString() : null;
+    }
+
     private String text(JsonNode node, String path) {
         for (String part : path.split("\\.")) node = node == null ? null : node.get(part);
-        return node == null || node.isNull() ? null : node.asText();
+        return node == null || node.isNull() || !node.isValueNode() ? null : node.asString();
     }
 
     public record Receipt(String providerEventId, String eventType, String deduplicationKey) {}

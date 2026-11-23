@@ -40,7 +40,9 @@ public class WebhookService {
             if (isRefundEvent(webhook.event())) {
                 PaystackRefundWebhookData refund = objectMapper.treeToValue(
                         webhook.data(), PaystackRefundWebhookData.class);
-                refunds.process(webhook.event(), refund, rawPayload);
+                if (!refunds.process(webhook.event(), refund, rawPayload)) {
+                    throw new IllegalStateException("Deferring Paystack refund webhook until pending refunds settle IDs");
+                }
             }
         } catch (RuntimeException failure) {
             throw failure;
