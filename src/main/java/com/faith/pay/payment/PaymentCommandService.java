@@ -35,6 +35,14 @@ public class PaymentCommandService {
 
     @Transactional
     public PaymentReservation reserve(Long orderId, String idempotencyKey, PaymentProviderType provider) {
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            throw new AppException(ErrorCode.BAD_REQUEST, org.springframework.http.HttpStatus.BAD_REQUEST,
+                    "Idempotency-Key is required");
+        }
+        if (idempotencyKey.length() > 100) {
+            throw new AppException(ErrorCode.BAD_REQUEST, org.springframework.http.HttpStatus.BAD_REQUEST,
+                    "Idempotency-Key must be at most 100 characters");
+        }
         var existing = payments.findByIdempotencyKey(idempotencyKey);
         if (existing.isPresent()) {
             Payment payment = existing.get();
@@ -88,6 +96,11 @@ public class PaymentCommandService {
             throw new AppException(ErrorCode.PROVIDER_RESPONSE_INVALID,
                     org.springframework.http.HttpStatus.BAD_GATEWAY,
                     "Initialization result does not match the reserved payment provider and reference");
+        }
+        if (provider.checkoutUrl() == null || provider.checkoutUrl().isBlank()) {
+            throw new AppException(ErrorCode.PROVIDER_RESPONSE_INVALID,
+                    org.springframework.http.HttpStatus.BAD_GATEWAY,
+                    "Provider initialization response did not contain a checkout URL");
         }
 
         payment.markProcessing(provider.checkoutUrl(), provider.providerSessionId());

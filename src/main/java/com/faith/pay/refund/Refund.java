@@ -136,10 +136,17 @@ public class Refund {
     }
 
     private void recordProviderState(String providerRefundId, String providerStatus) {
-        if (providerRefundId != null) {
+        if (providerRefundId != null && !providerRefundId.isBlank()) {
             this.providerRefundId = providerRefundId;
         }
         this.providerStatus = providerStatus;
+    }
+
+    public void recordProviderRefundIdIfMissing(String providerRefundId) {
+        if ((this.providerRefundId == null || this.providerRefundId.isBlank())
+                && providerRefundId != null && !providerRefundId.isBlank()) {
+            this.providerRefundId = providerRefundId;
+        }
     }
 
     public void recordReconciliationAttempt() { reconciliationAttempts++; lastReconciledAt = Instant.now(); }

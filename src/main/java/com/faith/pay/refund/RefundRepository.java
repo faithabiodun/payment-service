@@ -13,7 +13,13 @@ import java.util.Optional;
 
 public interface RefundRepository extends JpaRepository<Refund, Long> {
 
-    Optional<Refund> findByIdempotencyKey(String idempotencyKey);
+    @Query("""
+            select r
+            from Refund r
+            join fetch r.payment
+            where r.idempotencyKey = :idempotencyKey
+            """)
+    Optional<Refund> findByIdempotencyKey(@Param("idempotencyKey") String idempotencyKey);
 
     List<Refund> findByManualReviewRequiredTrue();
 
@@ -29,6 +35,11 @@ public interface RefundRepository extends JpaRepository<Refund, Long> {
     Optional<String> findPaymentReferenceByReference(@Param("reference") String reference);
 
     Optional<Refund> findByProviderRefundId(String providerRefundId);
+
+    boolean existsByProviderAndStatusAndProviderRefundIdIsNull(
+            PaymentProviderType provider,
+            RefundStatus status
+    );
 
     @Query("select r from Refund r join fetch r.payment where r.provider = :provider and r.providerRefundId = :providerRefundId")
     Optional<Refund> findByProviderAndProviderRefundId(

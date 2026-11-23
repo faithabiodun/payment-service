@@ -60,7 +60,10 @@ public class RefundStateService {
         RefundStatus current = refund.getStatus();
 
         if (current.isTerminal()) {
-            if (current == target) {
+            if (current == target || !target.isTerminal()) {
+                // Idempotent replay or stale out-of-order non-terminal notification (e.g. a synchronous
+                // pending response arriving after a fast processed webhook). Still backfill providerRefundId if missing.
+                refund.recordProviderRefundIdIfMissing(provider.providerRefundId());
                 return refund;
             }
             throw invalidTransition(current, target);
@@ -142,12 +145,13 @@ public class RefundStateService {
                 || !payment.getCurrency().equalsIgnoreCase(provider.currency())) {
             throw invalidProviderResponse("Provider refund currency did not match the payment currency");
         }
-        if (source == PaymentEventSource.REFUND && provider.providerRefundId() == null) {
+        String providerRefundId = provider.providerRefundId();
+        boolean hasProviderRefundId = providerRefundId != null && !providerRefundId.isBlank();
+        if (source == PaymentEventSource.REFUND && !hasProviderRefundId) {
             throw invalidProviderResponse("Provider refund response did not include an id");
         }
 
-        String providerRefundId = provider.providerRefundId();
-        if (providerRefundId != null) {
+        if (hasProviderRefundId) {
             if (refund.getProviderRefundId() != null
                     && !refund.getProviderRefundId().equals(providerRefundId)) {
                 throw invalidProviderResponse("Provider returned a different id for this refund");

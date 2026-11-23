@@ -141,7 +141,7 @@ public class PaymentSettlementService {
          * 8. Provider transaction id is required
          *    for successful settlement.
          */
-        if (provider.providerPaymentId() == null) {
+        if (provider.providerPaymentId() == null || provider.providerPaymentId().isBlank()) {
 
             throw new AppException(
                     ErrorCode.PROVIDER_RESPONSE_INVALID,
@@ -153,6 +153,16 @@ public class PaymentSettlementService {
                             + "did not contain transaction id"
             );
         }
+
+        payments.findByProviderAndProviderTransactionId(payment.getProvider(), provider.providerPaymentId())
+                .filter(other -> !other.getReference().equals(payment.getReference()))
+                .ifPresent(other -> {
+                    throw new AppException(
+                            ErrorCode.PROVIDER_RESPONSE_INVALID,
+                            org.springframework.http.HttpStatus.BAD_GATEWAY,
+                            "Provider transaction id is already linked to another payment"
+                    );
+                });
 
         long feeMinor = provider.feeMinor() == null ? 0L : provider.feeMinor();
         if (feeMinor < 0 || feeMinor > payment.getAmountKobo()) {

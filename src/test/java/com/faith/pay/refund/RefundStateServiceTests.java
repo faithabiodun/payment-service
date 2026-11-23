@@ -99,6 +99,18 @@ class RefundStateServiceTests {
         assertEquals(0L, payment.getRefundedKobo());
     }
 
+    @Test
+    void stalePendingNotificationAfterSuccessIsIgnoredAndBackfillsMissingProviderRefundId() {
+        refund.markSuccessful(null, "processed");
+
+        Refund result = states.applyProviderState("REF-1",
+                new PaystackRefundData(BigInteger.valueOf(9911), "pending", 250_000L, "NGN", null, null),
+                PaymentEventSource.REFUND, null);
+
+        assertEquals(RefundStatus.SUCCESS, result.getStatus());
+        assertEquals("9911", result.getProviderRefundId());
+    }
+
     private PaystackRefundData provider(String status) {
         return new PaystackRefundData(BigInteger.valueOf(9001), status,
                 250_000L, "NGN", null, null);

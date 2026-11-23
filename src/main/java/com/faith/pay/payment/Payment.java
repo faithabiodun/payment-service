@@ -45,7 +45,7 @@ public class Payment {
     private String channel;
 
     @Column(name = "fees_kobo")
-    private long feesKobo;
+    private Long feesKobo = 0L;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
@@ -279,7 +279,7 @@ public class Payment {
     }
 
     public long getFeesKobo() {
-        return feesKobo;
+        return feesKobo == null ? 0L : feesKobo;
     }
 
     public String getChannel() {

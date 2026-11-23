@@ -5,6 +5,7 @@ import com.faith.pay.payment.audit.PaymentEventSource;
 import com.faith.pay.payment.dto.*;
 import com.faith.pay.provider.core.*;
 import com.faith.pay.provider.dto.VerifyPaymentResponse;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
@@ -52,14 +53,36 @@ public class PaymentService {
             throw new AppException(ErrorCode.BAD_REQUEST, HttpStatus.BAD_REQUEST,
                     "Idempotency-Key is required");
         }
+        if (idempotencyKey.length() > 100) {
+            throw new AppException(ErrorCode.BAD_REQUEST, HttpStatus.BAD_REQUEST,
+                    "Idempotency-Key must be at most 100 characters");
+        }
 
+        // Serve idempotent replays before routing or provider circuit/config checks.
+        var existing = payments.findByIdempotencyKey(idempotencyKey);
+        if (existing.isPresent()) {
+            return replayResponse(existing.get(), request);
+        }
 
         PaymentProviderType selectedProvider = routingPolicy.choose(request.provider());
         PaymentProvider provider = providers.get(selectedProvider);
         provider.validateConfiguration();
-        PaymentReservation reservation = commands.reserve(request.orderId(), idempotencyKey, selectedProvider);
+
+        PaymentReservation reservation;
+        try {
+            reservation = commands.reserve(request.orderId(), idempotencyKey, selectedProvider);
+        } catch (DataIntegrityViolationException conflict) {
+            var raced = payments.findByIdempotencyKey(idempotencyKey);
+            if (raced.isPresent()) {
+                return replayResponse(raced.get(), request);
+            }
+            throw conflict;
+        }
 
         if (!reservation.newlyCreated()) {
+            if (reservation.status() == PaymentStatus.PENDING) {
+                throw new PaymentInitializationInProgressException(request.orderId());
+            }
             return response(reservation);
         }
 
@@ -71,12 +94,25 @@ public class PaymentService {
 
             return response(commands.markInitialized(reservation.reference(), result));
 
-        } catch (ProviderCommunicationException failure) {
-            // The provider may have accepted the request before the connection failed.
+        } catch (RuntimeException failure) {
+            // The provider may have accepted the request before the failure occurred.
             // Keep the reservation and record that the outcome needs reconciliation.
             commands.markInitializationUncertain(reservation.reference());
             throw failure;
         }
+    }
+
+    private InitializePaymentResponse replayResponse(Payment payment, InitializePaymentRequest request) {
+        if (!payment.getOrder().getId().equals(request.orderId())
+                || (request.provider() != null && payment.getProvider() != request.provider())) {
+            throw new IdempotencyKeyReuseException();
+        }
+        if (payment.getStatus() == PaymentStatus.PENDING) {
+            throw new PaymentInitializationInProgressException(request.orderId());
+        }
+        return new InitializePaymentResponse(payment.getId(), payment.getReference(),
+                payment.getAmountKobo(), payment.getCurrency(), payment.getStatus(),
+                payment.getAuthorizationUrl());
     }
 
 

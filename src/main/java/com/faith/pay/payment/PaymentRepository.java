@@ -1,5 +1,6 @@
 package com.faith.pay.payment;
 
+import com.faith.pay.provider.core.PaymentProviderType;
 import jakarta.persistence.LockModeType;
 
 import org.springframework.data.jpa.repository.*;
@@ -23,8 +24,20 @@ public interface PaymentRepository
             String reference
     );
 
+    @Query("""
+            select p
+            from Payment p
+            join fetch p.order
+            where p.idempotencyKey = :idempotencyKey
+            """)
     Optional<Payment> findByIdempotencyKey(
+            @Param("idempotencyKey")
             String idempotencyKey
+    );
+
+    Optional<Payment> findByProviderAndProviderTransactionId(
+            PaymentProviderType provider,
+            String providerTransactionId
     );
 
     List<Payment> findByManualReviewRequiredTrue();

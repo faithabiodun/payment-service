@@ -19,6 +19,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import tools.jackson.databind.JsonNode;
@@ -39,8 +40,9 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 @Import(TestcontainersConfiguration.class)
-@SpringBootTest(properties = "paystack.secret-key=test-secret")
+@SpringBootTest(properties = {"paystack.secret-key=test-secret", "app.test-orders.enabled=true"})
 @AutoConfigureMockMvc
+@WithMockUser(roles = "ADMIN")
 class PaymentRefundEndToEndTests {
     @Autowired MockMvc mvc;
     @Autowired ObjectMapper json;

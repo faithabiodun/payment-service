@@ -95,13 +95,17 @@ public class RefundCommandService {
             throw new AppException(ErrorCode.BAD_REQUEST, HttpStatus.BAD_REQUEST,
                     "Idempotency-Key is required");
         }
+        if (idempotencyKey.length() > 100) {
+            throw new AppException(ErrorCode.BAD_REQUEST, HttpStatus.BAD_REQUEST,
+                    "Idempotency-Key must be at most 100 characters");
+        }
         if (paymentReference == null || paymentReference.isBlank()) {
             throw new AppException(ErrorCode.BAD_REQUEST, HttpStatus.BAD_REQUEST,
                     "Payment reference is required");
         }
     }
 
-    private void validateReplay(
+    public void validateReplay(
             Refund refund,
             String paymentReference,
             RefundRequest request,
@@ -120,8 +124,10 @@ public class RefundCommandService {
     }
 
     private RefundReservation reservation(Refund refund, boolean newlyCreated) {
+        Payment payment = refund.getPayment();
         return new RefundReservation(refund.getId(), refund.getReference(),
-                refund.getPayment().getReference(), refund.getAmountKobo(), refund.getStatus(),
+                payment.getReference(), payment.getProvider(), payment.getProviderTransactionId(),
+                payment.getCurrency(), refund.getAmountKobo(), refund.getStatus(),
                 refund.getProviderRefundId(), newlyCreated);
     }
 
