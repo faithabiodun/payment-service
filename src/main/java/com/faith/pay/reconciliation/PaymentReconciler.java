@@ -43,6 +43,16 @@ public class PaymentReconciler {
             recovery.recordAttempt(reference, "PROVIDER_UNAVAILABLE", null,
                     safeDetail(unavailable), properties.maxAttempts(), true);
             return;
+        } catch (AppException failure) {
+            if (failure.getCode() == ErrorCode.PROVIDER_UNAVAILABLE) {
+                log.warn("Provider temporarily unavailable while reconciling payment reference={}, provider={}",
+                        reference, owner);
+                recovery.recordAttempt(reference, "PROVIDER_UNAVAILABLE", null,
+                        safeDetail(failure), properties.maxAttempts(), true);
+                return;
+            }
+            recovery.flagManualReview(reference, null, classify(failure), safeDetail(failure));
+            return;
         } catch (RuntimeException discrepancy) {
             recovery.flagManualReview(reference, null, classify(discrepancy), safeDetail(discrepancy));
             return;
@@ -128,9 +138,10 @@ public class PaymentReconciler {
                     result == PaymentRecoveryService.TransitionResult.CHANGED ? "MARKED_ABANDONED" : "ALREADY_CORRECT",
                     provider.state().name(), "Provider reports cancellation", properties.maxAttempts(), false);
         } else {
+            // Waiting for the configured abandonAfter threshold is expected; do not escalate to manual review.
             recovery.recordAttempt(candidate.getReference(), "STILL_OPEN", provider.state().name(),
                     "Cancelled provider transaction is younger than configured threshold",
-                    properties.maxAttempts(), true);
+                    properties.maxAttempts(), false);
         }
     }
 
@@ -138,7 +149,14 @@ public class PaymentReconciler {
         if (failure instanceof PaymentAmountMismatchException) return ReconciliationDiscrepancyType.AMOUNT_MISMATCH;
         if (failure instanceof PaymentCurrencyMismatchException) return ReconciliationDiscrepancyType.CURRENCY_MISMATCH;
         if (failure instanceof PaymentReferenceMismatchException) return ReconciliationDiscrepancyType.REFERENCE_MISMATCH;
-        if (failure.getMessage() != null && failure.getMessage().contains("provider")) {
+        if (failure instanceof UnexpectedPaymentStateException) {
+            return ReconciliationDiscrepancyType.LOCAL_PROVIDER_CONTRADICTION;
+        }
+        String message = failure.getMessage() == null ? "" : failure.getMessage().toLowerCase(java.util.Locale.ROOT);
+        if (message.contains("already linked") || message.contains("duplicate")) {
+            return ReconciliationDiscrepancyType.DUPLICATE_PROVIDER_TRANSACTION;
+        }
+        if (message.contains("does not own") || message.contains("no payment provider registered")) {
             return ReconciliationDiscrepancyType.PROVIDER_MISMATCH;
         }
         return ReconciliationDiscrepancyType.PROVIDER_DATA_MISMATCH;

@@ -52,11 +52,30 @@ public class PaymentRecoveryService {
                               int maxAttempts, boolean unresolved) {
         Payment payment = payments.findByReferenceForUpdate(reference)
                 .orElseThrow(() -> new PaymentNotFoundException(reference));
+        if (!payment.getStatus().isOpen() && unresolved) {
+            if (payment.getStatus().hasSuccessfulCharge()
+                    && ("CANCELLED".equalsIgnoreCase(providerStatus) || "FAILED".equalsIgnoreCase(providerStatus))) {
+                payment.recordReconciliationAttempt();
+                payment.requireManualReview();
+                attempts.append("PAYMENT", reference, "MANUAL_REVIEW", providerStatus,
+                        ReconciliationDiscrepancyType.LOCAL_PROVIDER_CONTRADICTION,
+                        "Local payment is " + payment.getStatus() + " while provider reports " + providerStatus);
+                events.append(payment, PaymentEventType.RECONCILIATION_MISMATCH, payment.getStatus(), payment.getStatus(),
+                        PaymentEventSource.RECONCILIATION, null);
+                return;
+            }
+            // Payment reached a terminal/settled state concurrently (e.g., via webhook); do not flag manual review.
+            payment.recordReconciliationAttempt();
+            attempts.append("PAYMENT", reference, "ALREADY_CORRECT", providerStatus,
+                    "Local payment already transitioned to " + payment.getStatus());
+            return;
+        }
         payment.recordReconciliationAttempt();
         attempts.append("PAYMENT", reference, outcome, providerStatus, details);
         if (unresolved && payment.getReconciliationAttempts() >= maxAttempts && !payment.isManualReviewRequired()) {
             payment.requireManualReview();
             attempts.append("PAYMENT", reference, "MANUAL_REVIEW", providerStatus,
+                    ReconciliationDiscrepancyType.MANUAL_REVIEW_REQUIRED,
                     "Maximum reconciliation attempts reached: " + maxAttempts);
         }
     }
