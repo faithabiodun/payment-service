@@ -3,11 +3,15 @@ package com.faith.pay.order;
 import com.faith.pay.order.dto.CreateOrderRequest;
 import com.faith.pay.order.dto.CreateOrderResponse;
 import jakarta.validation.Valid;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.*;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api/v1/test-orders")
+@ConditionalOnProperty(name = "app.test-orders.enabled", havingValue = "true")
+@PreAuthorize("hasRole('ADMIN')")
 public class TestOrderController {
     private final OrderRepository orderRepository;
 

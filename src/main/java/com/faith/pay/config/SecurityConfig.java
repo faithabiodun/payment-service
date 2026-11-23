@@ -65,6 +65,9 @@ public class SecurityConfig {
                         .requestMatchers("/webhooks/paystack", "/webhooks/flutterwave", "/webhooks/stripe").permitAll()
                         // The browser return is UX only; it never settles or verifies a payment.
                         .requestMatchers("/api/v1/payments/callback").permitAll()
+                        .requestMatchers("/api/v1/payments/*/refunds").hasRole("ADMIN")
+                        .requestMatchers("/api/v1/payments/**").hasAnyRole("CUSTOMER", "ADMIN")
+                        .requestMatchers("/api/v1/test-orders/**").hasRole("ADMIN")
                         .requestMatchers("/actuator/health", "/actuator/health/**", "/actuator/info").permitAll()
                         .requestMatchers("/actuator/prometheus").hasAnyRole("MONITORING", "ADMIN")
                         .anyRequest().authenticated())
