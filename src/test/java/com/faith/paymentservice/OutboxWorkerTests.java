@@ -38,4 +38,21 @@ class OutboxWorkerTests {
         verify(repository).markFailed(eq(20L), eq(2), eq("IllegalStateException"), anyLong(), eq(8));
         verify(repository, never()).markPublished(anyLong(), anyInt());
     }
+
+    @Test
+    void markPublishedFailureDoesNotTriggerMarkFailedOrAbortRemainingBatch() {
+        var repository = mock(OutboxRepository.class);
+        var sink = mock(OutboxSink.class);
+        var first = new OutboxEvent(1, "PAYMENT", "PAY-1", "PAYMENT_SUCCEEDED", "{}", 1);
+        var second = new OutboxEvent(2, "PAYMENT", "PAY-2", "PAYMENT_SUCCEEDED", "{}", 1);
+        when(repository.claimBatch(25, 120, 8)).thenReturn(List.of(first, second));
+        doThrow(new org.springframework.dao.QueryTimeoutException("db blip")).when(repository).markPublished(1, 1);
+
+        new OutboxWorker(repository, sink, 25, 120).dispatchBatch();
+
+        verify(sink).dispatch(first);
+        verify(sink).dispatch(second);
+        verify(repository, never()).markFailed(eq(1L), anyInt(), anyString(), anyLong(), anyInt());
+        verify(repository).markPublished(2, 1);
+    }
 }
